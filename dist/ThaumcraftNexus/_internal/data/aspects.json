@@ -1,0 +1,1112 @@
+{
+  "schema": "thaumcraft-nexus/aspects/v1",
+  "source": {
+    "nesqlRoot": "local NESQL export, supplied by --nesql or THAUM_NEXUS_NESQL",
+    "items": "items/thaumcraftneiplugin/items.json.gz",
+    "payloads": "raw-export/special/thaumcraft/payloads.jsonl.gz",
+    "projectImageDir": "image",
+    "generatedAtUtc": "2026-07-04T10:58:20.979914+00:00",
+    "note": "NESQL source files are read-only inputs; generated files live under this project data/ directory."
+  },
+  "count": 69,
+  "aspects": {
+    "aer": {
+      "key": "aer",
+      "name": "Aer",
+      "localizedName": "要素: Aer",
+      "description": "风",
+      "hash": "fAEKF3UUPgWZnEuxrVzERA==",
+      "icon": "image/Aspect~0~fAEKF3UUPgWZnEuxrVzERA==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~fAEKF3UUPgWZnEuxrVzERA==",
+      "meta": 0,
+      "primal": true,
+      "components": []
+    },
+    "alienis": {
+      "key": "alienis",
+      "name": "Alienis",
+      "localizedName": "要素: Alienis",
+      "description": "异域,怪异,诡谲",
+      "hash": "RnKdNXSwNY-iF03t_6-hVA==",
+      "icon": "image/Aspect~0~RnKdNXSwNY-iF03t_6-hVA==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~RnKdNXSwNY-iF03t_6-hVA==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "vacuos",
+        "tenebrae"
+      ]
+    },
+    "aqua": {
+      "key": "aqua",
+      "name": "Aqua",
+      "localizedName": "要素: Aqua",
+      "description": "水",
+      "hash": "lb6OgOxrMDST09phum6CDQ==",
+      "icon": "image/Aspect~0~lb6OgOxrMDST09phum6CDQ==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~lb6OgOxrMDST09phum6CDQ==",
+      "meta": 0,
+      "primal": true,
+      "components": []
+    },
+    "arbor": {
+      "key": "arbor",
+      "name": "Arbor",
+      "localizedName": "要素: Arbor",
+      "description": "树木,木材",
+      "hash": "QDaA6TmDNCevYfB1_1X5_g==",
+      "icon": "image/Aspect~0~QDaA6TmDNCevYfB1_1X5_g==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~QDaA6TmDNCevYfB1_1X5_g==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "aer",
+        "herba"
+      ]
+    },
+    "auram": {
+      "key": "auram",
+      "name": "Auram",
+      "localizedName": "要素: Auram",
+      "description": "灵气",
+      "hash": "6tN9HgR2Pf-iJ_KPD-XjZw==",
+      "icon": "image/Aspect~0~6tN9HgR2Pf-iJ_KPD-XjZw==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~6tN9HgR2Pf-iJ_KPD-XjZw==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "praecantatio",
+        "aer"
+      ]
+    },
+    "bestia": {
+      "key": "bestia",
+      "name": "Bestia",
+      "localizedName": "要素: Bestia",
+      "description": "野兽",
+      "hash": "k7P4LDyCMwOOlzWi06MCOw==",
+      "icon": "image/Aspect~0~k7P4LDyCMwOOlzWi06MCOw==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~k7P4LDyCMwOOlzWi06MCOw==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "motus",
+        "victus"
+      ]
+    },
+    "caelum": {
+      "key": "caelum",
+      "name": "Caelum",
+      "localizedName": "要素: Caelum",
+      "description": "宙空",
+      "hash": "AksLhS6LMPm8ybiVt8FOQg==",
+      "icon": "image/Aspect~0~AksLhS6LMPm8ybiVt8FOQg==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~AksLhS6LMPm8ybiVt8FOQg==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "vitreus",
+        "metallum"
+      ]
+    },
+    "cognitio": {
+      "key": "cognitio",
+      "name": "Cognitio",
+      "localizedName": "要素: Cognitio",
+      "description": "思维,记忆,认知",
+      "hash": "6wyGiXkuM9GsneM2VLTZnA==",
+      "icon": "image/Aspect~0~6wyGiXkuM9GsneM2VLTZnA==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~6wyGiXkuM9GsneM2VLTZnA==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "ignis",
+        "spiritus"
+      ]
+    },
+    "corpus": {
+      "key": "corpus",
+      "name": "Corpus",
+      "localizedName": "要素: Corpus",
+      "description": "肉体",
+      "hash": "BtMtkzYEPK-mSyce4dQWdA==",
+      "icon": "image/Aspect~0~BtMtkzYEPK-mSyce4dQWdA==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~BtMtkzYEPK-mSyce4dQWdA==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "mortuus",
+        "bestia"
+      ]
+    },
+    "custom1": {
+      "key": "custom1",
+      "name": "Aequalitas",
+      "localizedName": "要素: Aequalitas",
+      "description": "平等,平衡,均衡",
+      "hash": "XLChheNtPDOdHO9K1DlOtw==",
+      "icon": "image/Aspect~0~XLChheNtPDOdHO9K1DlOtw==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~XLChheNtPDOdHO9K1DlOtw==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "cognitio",
+        "ordo"
+      ]
+    },
+    "custom2": {
+      "key": "custom2",
+      "name": "Vesania",
+      "localizedName": "要素: Vesania",
+      "description": "疯癫,癫狂,狂热",
+      "hash": "X0VrwVqpNMKt2E32zEZXHA==",
+      "icon": "image/Aspect~0~X0VrwVqpNMKt2E32zEZXHA==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~X0VrwVqpNMKt2E32zEZXHA==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "cognitio",
+        "vitium"
+      ]
+    },
+    "custom3": {
+      "key": "custom3",
+      "name": "Primordium",
+      "localizedName": "要素: Primordium",
+      "description": "起始,起源,源头",
+      "hash": "qXBLKgqdPUaHvCjH-kYluA==",
+      "icon": "image/Aspect~0~qXBLKgqdPUaHvCjH-kYluA==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~qXBLKgqdPUaHvCjH-kYluA==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "vacuos",
+        "motus"
+      ]
+    },
+    "custom4": {
+      "key": "custom4",
+      "name": "Astrum",
+      "localizedName": "要素: Astrum",
+      "description": "星辰,星座,天国",
+      "hash": "HmIkkQgLO9G_-BPPnioU-g==",
+      "icon": "image/Aspect~0~HmIkkQgLO9G_-BPPnioU-g==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~HmIkkQgLO9G_-BPPnioU-g==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "lux",
+        "custom3"
+      ]
+    },
+    "custom5": {
+      "key": "custom5",
+      "name": "Gloria",
+      "localizedName": "要素: Gloria",
+      "description": "荣耀,荣誉,声誉",
+      "hash": "-fRy34lCPpilc8Z_sZSJ_A==",
+      "icon": "image/Aspect~0~-fRy34lCPpilc8Z_sZSJ_A==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~-fRy34lCPpilc8Z_sZSJ_A==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "humanus",
+        "iter"
+      ]
+    },
+    "desidia": {
+      "key": "desidia",
+      "name": "Desidia",
+      "localizedName": "要素: Desidia",
+      "description": "怠惰,懒散,拖延",
+      "hash": "Poumcd6dObyMFklMmRZhCA==",
+      "icon": "image/Aspect~0~Poumcd6dObyMFklMmRZhCA==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~Poumcd6dObyMFklMmRZhCA==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "vinculum",
+        "spiritus"
+      ]
+    },
+    "electrum": {
+      "key": "electrum",
+      "name": "Electrum",
+      "localizedName": "要素: Electrum",
+      "description": "Electricity, Lightning",
+      "hash": "C50BANQcPpyh6b5ZrtJRzg==",
+      "icon": "image/Aspect~0~C50BANQcPpyh6b5ZrtJRzg==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~C50BANQcPpyh6b5ZrtJRzg==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "potentia",
+        "machina"
+      ]
+    },
+    "exanimis": {
+      "key": "exanimis",
+      "name": "Exanimis",
+      "localizedName": "要素: Exanimis",
+      "description": "不死,亡灵",
+      "hash": "ra0yIkxNMrePWO5SXchRzA==",
+      "icon": "image/Aspect~0~ra0yIkxNMrePWO5SXchRzA==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~ra0yIkxNMrePWO5SXchRzA==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "motus",
+        "mortuus"
+      ]
+    },
+    "fabrico": {
+      "key": "fabrico",
+      "name": "Fabrico",
+      "localizedName": "要素: Fabrico",
+      "description": "合成,工艺",
+      "hash": "aoygy2N2Nja277OSV7JRwQ==",
+      "icon": "image/Aspect~0~aoygy2N2Nja277OSV7JRwQ==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~aoygy2N2Nja277OSV7JRwQ==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "humanus",
+        "instrumentum"
+      ]
+    },
+    "fames": {
+      "key": "fames",
+      "name": "Fames",
+      "localizedName": "要素: Fames",
+      "description": "饥饿",
+      "hash": "L6Zm8UJCPR-kN8Pyc-rpRQ==",
+      "icon": "image/Aspect~0~L6Zm8UJCPR-kN8Pyc-rpRQ==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~L6Zm8UJCPR-kN8Pyc-rpRQ==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "victus",
+        "vacuos"
+      ]
+    },
+    "gelum": {
+      "key": "gelum",
+      "name": "Gelum",
+      "localizedName": "要素: Gelum",
+      "description": "寒冰,霜冻,寒冷",
+      "hash": "D3Aoy7N3OEGbK51rIZ0eqQ==",
+      "icon": "image/Aspect~0~D3Aoy7N3OEGbK51rIZ0eqQ==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~D3Aoy7N3OEGbK51rIZ0eqQ==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "ignis",
+        "perditio"
+      ]
+    },
+    "gula": {
+      "key": "gula",
+      "name": "Gula",
+      "localizedName": "要素: Gula",
+      "description": "饕餮,挥霍,放纵",
+      "hash": "YQCLwqbQOsyWc7-EbyaqiQ==",
+      "icon": "image/Aspect~0~YQCLwqbQOsyWc7-EbyaqiQ==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~YQCLwqbQOsyWc7-EbyaqiQ==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "fames",
+        "vacuos"
+      ]
+    },
+    "herba": {
+      "key": "herba",
+      "name": "Herba",
+      "localizedName": "要素: Herba",
+      "description": "植物",
+      "hash": "nKbQ0Sa2NhedmdZ6Vnnmsg==",
+      "icon": "image/Aspect~0~nKbQ0Sa2NhedmdZ6Vnnmsg==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~nKbQ0Sa2NhedmdZ6Vnnmsg==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "victus",
+        "terra"
+      ]
+    },
+    "humanus": {
+      "key": "humanus",
+      "name": "Humanus",
+      "localizedName": "要素: Humanus",
+      "description": "人类",
+      "hash": "L-H5p000MF6BDWDwXnIxMA==",
+      "icon": "image/Aspect~0~L-H5p000MF6BDWDwXnIxMA==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~L-H5p000MF6BDWDwXnIxMA==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "bestia",
+        "cognitio"
+      ]
+    },
+    "ignis": {
+      "key": "ignis",
+      "name": "Ignis",
+      "localizedName": "要素: Ignis",
+      "description": "火",
+      "hash": "JSVWkWxqNvSvkUm-PvuYrQ==",
+      "icon": "image/Aspect~0~JSVWkWxqNvSvkUm-PvuYrQ==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~JSVWkWxqNvSvkUm-PvuYrQ==",
+      "meta": 0,
+      "primal": true,
+      "components": []
+    },
+    "infernus": {
+      "key": "infernus",
+      "name": "Infernus",
+      "localizedName": "要素: Infernus",
+      "description": "下界,恶魔,地狱火",
+      "hash": "1m-dABluMX2uBT_FhScEAg==",
+      "icon": "image/Aspect~0~1m-dABluMX2uBT_FhScEAg==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~1m-dABluMX2uBT_FhScEAg==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "ignis",
+        "praecantatio"
+      ]
+    },
+    "instrumentum": {
+      "key": "instrumentum",
+      "name": "Instrumentum",
+      "localizedName": "要素: Instrumentum",
+      "description": "工具,仪器",
+      "hash": "ldfQSXiFOV6pd_1_EJOAgQ==",
+      "icon": "image/Aspect~0~ldfQSXiFOV6pd_1_EJOAgQ==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~ldfQSXiFOV6pd_1_EJOAgQ==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "humanus",
+        "ordo"
+      ]
+    },
+    "invidia": {
+      "key": "invidia",
+      "name": "Invidia",
+      "localizedName": "要素: Invidia",
+      "description": "妒忌,嫉妒,不安",
+      "hash": "ygCZCVUhNvOsUg1MyAAorw==",
+      "icon": "image/Aspect~0~ygCZCVUhNvOsUg1MyAAorw==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~ygCZCVUhNvOsUg1MyAAorw==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "sensus",
+        "fames"
+      ]
+    },
+    "ira": {
+      "key": "ira",
+      "name": "Ira",
+      "localizedName": "要素: Ira",
+      "description": "暴怒,恼怒,怒火",
+      "hash": "ZCUXhgvfNBG3PL8lH9zmNA==",
+      "icon": "image/Aspect~0~ZCUXhgvfNBG3PL8lH9zmNA==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~ZCUXhgvfNBG3PL8lH9zmNA==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "telum",
+        "ignis"
+      ]
+    },
+    "iter": {
+      "key": "iter",
+      "name": "Iter",
+      "localizedName": "要素: Iter",
+      "description": "旅行,行程",
+      "hash": "4xKBfaTGMJeUx49ayvYeAQ==",
+      "icon": "image/Aspect~0~4xKBfaTGMJeUx49ayvYeAQ==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~4xKBfaTGMJeUx49ayvYeAQ==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "motus",
+        "terra"
+      ]
+    },
+    "limus": {
+      "key": "limus",
+      "name": "Limus",
+      "localizedName": "要素: Limus",
+      "description": "史莱姆,黏液",
+      "hash": "tHfwXp_iOUy1TihQGhvXpw==",
+      "icon": "image/Aspect~0~tHfwXp_iOUy1TihQGhvXpw==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~tHfwXp_iOUy1TihQGhvXpw==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "victus",
+        "aqua"
+      ]
+    },
+    "lucrum": {
+      "key": "lucrum",
+      "name": "Lucrum",
+      "localizedName": "要素: Lucrum",
+      "description": "贪婪,贪财",
+      "hash": "ziktSttgODmt120cOv1Kcg==",
+      "icon": "image/Aspect~0~ziktSttgODmt120cOv1Kcg==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~ziktSttgODmt120cOv1Kcg==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "humanus",
+        "fames"
+      ]
+    },
+    "lux": {
+      "key": "lux",
+      "name": "Lux",
+      "localizedName": "要素: Lux",
+      "description": "光明",
+      "hash": "8EsH2RaJPrKrDtxtBaDAHw==",
+      "icon": "image/Aspect~0~8EsH2RaJPrKrDtxtBaDAHw==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~8EsH2RaJPrKrDtxtBaDAHw==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "aer",
+        "ignis"
+      ]
+    },
+    "luxuria": {
+      "key": "luxuria",
+      "name": "Luxuria",
+      "localizedName": "要素: Luxuria",
+      "description": "欲望,欲念,无度",
+      "hash": "s6V8MqcaPGax8vgKFH5wIw==",
+      "icon": "image/Aspect~0~s6V8MqcaPGax8vgKFH5wIw==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~s6V8MqcaPGax8vgKFH5wIw==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "corpus",
+        "fames"
+      ]
+    },
+    "machina": {
+      "key": "machina",
+      "name": "Machina",
+      "localizedName": "要素: Machina",
+      "description": "机械,机构",
+      "hash": "-WZow0DtPpGnHLV45_DGeQ==",
+      "icon": "image/Aspect~0~-WZow0DtPpGnHLV45_DGeQ==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~-WZow0DtPpGnHLV45_DGeQ==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "motus",
+        "instrumentum"
+      ]
+    },
+    "magneto": {
+      "key": "magneto",
+      "name": "Magneto",
+      "localizedName": "要素: Magneto",
+      "description": "Magnetism, Attraction",
+      "hash": "VSal_9xpNbOmJsmoVLzE3w==",
+      "icon": "image/Aspect~0~VSal_9xpNbOmJsmoVLzE3w==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~VSal_9xpNbOmJsmoVLzE3w==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "metallum",
+        "iter"
+      ]
+    },
+    "messis": {
+      "key": "messis",
+      "name": "Messis",
+      "localizedName": "要素: Messis",
+      "description": "作物",
+      "hash": "vmSiwpQGOyih-5J8QGrxyg==",
+      "icon": "image/Aspect~0~vmSiwpQGOyih-5J8QGrxyg==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~vmSiwpQGOyih-5J8QGrxyg==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "herba",
+        "humanus"
+      ]
+    },
+    "metallum": {
+      "key": "metallum",
+      "name": "Metallum",
+      "localizedName": "要素: Metallum",
+      "description": "金属",
+      "hash": "l1RE8amgNwmfR8ghqw7H7Q==",
+      "icon": "image/Aspect~0~l1RE8amgNwmfR8ghqw7H7Q==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~l1RE8amgNwmfR8ghqw7H7Q==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "terra",
+        "vitreus"
+      ]
+    },
+    "meto": {
+      "key": "meto",
+      "name": "Meto",
+      "localizedName": "要素: Meto",
+      "description": "收获",
+      "hash": "YNC_PFRwN3-xtzjumexY-A==",
+      "icon": "image/Aspect~0~YNC_PFRwN3-xtzjumexY-A==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~YNC_PFRwN3-xtzjumexY-A==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "messis",
+        "instrumentum"
+      ]
+    },
+    "mortuus": {
+      "key": "mortuus",
+      "name": "Mortuus",
+      "localizedName": "要素: Mortuus",
+      "description": "死亡",
+      "hash": "6vCtvcj5P5SqrhJ0yJ_2rw==",
+      "icon": "image/Aspect~0~6vCtvcj5P5SqrhJ0yJ_2rw==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~6vCtvcj5P5SqrhJ0yJ_2rw==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "victus",
+        "perditio"
+      ]
+    },
+    "motus": {
+      "key": "motus",
+      "name": "Motus",
+      "localizedName": "要素: Motus",
+      "description": "移动,动作",
+      "hash": "E-fKHZn8PFGDOccGLNcGlQ==",
+      "icon": "image/Aspect~0~E-fKHZn8PFGDOccGLNcGlQ==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~E-fKHZn8PFGDOccGLNcGlQ==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "aer",
+        "ordo"
+      ]
+    },
+    "nebrisum": {
+      "key": "nebrisum",
+      "name": "Nebrisum",
+      "localizedName": "要素: Nebrisum",
+      "description": "Cheatyness, Raiding",
+      "hash": "rK3PeeWdPXaqfe0NPJjSWg==",
+      "icon": "image/Aspect~0~rK3PeeWdPXaqfe0NPJjSWg==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~rK3PeeWdPXaqfe0NPJjSWg==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "perfodio",
+        "lucrum"
+      ]
+    },
+    "ordo": {
+      "key": "ordo",
+      "name": "Ordo",
+      "localizedName": "要素: Ordo",
+      "description": "秩序,规则,纯净",
+      "hash": "Na3q2u0lNYWL36IAyx7FsQ==",
+      "icon": "image/Aspect~0~Na3q2u0lNYWL36IAyx7FsQ==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~Na3q2u0lNYWL36IAyx7FsQ==",
+      "meta": 0,
+      "primal": true,
+      "components": []
+    },
+    "pannus": {
+      "key": "pannus",
+      "name": "Pannus",
+      "localizedName": "要素: Pannus",
+      "description": "布匹,材料,覆盖",
+      "hash": "RhT0hi7oORaI1LfXp1nYrg==",
+      "icon": "image/Aspect~0~RhT0hi7oORaI1LfXp1nYrg==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~RhT0hi7oORaI1LfXp1nYrg==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "instrumentum",
+        "bestia"
+      ]
+    },
+    "perditio": {
+      "key": "perditio",
+      "name": "Perditio",
+      "localizedName": "要素: Perditio",
+      "description": "熵增,混沌,解构",
+      "hash": "WWH64YZjMzau-0OkV6zNjg==",
+      "icon": "image/Aspect~0~WWH64YZjMzau-0OkV6zNjg==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~WWH64YZjMzau-0OkV6zNjg==",
+      "meta": 0,
+      "primal": true,
+      "components": []
+    },
+    "perfodio": {
+      "key": "perfodio",
+      "name": "Perfodio",
+      "localizedName": "要素: Perfodio",
+      "description": "矿藏",
+      "hash": "NuRAe6LIMcyuW4RDj63sRA==",
+      "icon": "image/Aspect~0~NuRAe6LIMcyuW4RDj63sRA==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~NuRAe6LIMcyuW4RDj63sRA==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "humanus",
+        "terra"
+      ]
+    },
+    "permutatio": {
+      "key": "permutatio",
+      "name": "Permutatio",
+      "localizedName": "要素: Permutatio",
+      "description": "贸易,交换",
+      "hash": "jrBYqg9GNC67fgH4YO1Ciw==",
+      "icon": "image/Aspect~0~jrBYqg9GNC67fgH4YO1Ciw==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~jrBYqg9GNC67fgH4YO1Ciw==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "perditio",
+        "ordo"
+      ]
+    },
+    "potentia": {
+      "key": "potentia",
+      "name": "Potentia",
+      "localizedName": "要素: Potentia",
+      "description": "能量",
+      "hash": "P7pQ6Lf8P7GUv5XBLFQiWQ==",
+      "icon": "image/Aspect~0~P7pQ6Lf8P7GUv5XBLFQiWQ==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~P7pQ6Lf8P7GUv5XBLFQiWQ==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "ordo",
+        "ignis"
+      ]
+    },
+    "praecantatio": {
+      "key": "praecantatio",
+      "name": "Praecantatio",
+      "localizedName": "要素: Praecantatio",
+      "description": "魔力",
+      "hash": "afM_KWYzPDmY5GO8JROG4g==",
+      "icon": "image/Aspect~0~afM_KWYzPDmY5GO8JROG4g==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~afM_KWYzPDmY5GO8JROG4g==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "vacuos",
+        "potentia"
+      ]
+    },
+    "radio": {
+      "key": "radio",
+      "name": "Radio",
+      "localizedName": "要素: Radio",
+      "description": "Radiation",
+      "hash": "HCGuZvZZN2uRU9nfPMn0KQ==",
+      "icon": "image/Aspect~0~HCGuZvZZN2uRU9nfPMn0KQ==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~HCGuZvZZN2uRU9nfPMn0KQ==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "lux",
+        "potentia"
+      ]
+    },
+    "sano": {
+      "key": "sano",
+      "name": "Sano",
+      "localizedName": "要素: Sano",
+      "description": "治疗,痊愈",
+      "hash": "Dn_GtxS4OJG4_gPw2oHb9Q==",
+      "icon": "image/Aspect~0~Dn_GtxS4OJG4_gPw2oHb9Q==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~Dn_GtxS4OJG4_gPw2oHb9Q==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "victus",
+        "ordo"
+      ]
+    },
+    "sensus": {
+      "key": "sensus",
+      "name": "Sensus",
+      "localizedName": "要素: Sensus",
+      "description": "感官",
+      "hash": "BCSsmpzMN46WiD5XG9MMow==",
+      "icon": "image/Aspect~0~BCSsmpzMN46WiD5XG9MMow==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~BCSsmpzMN46WiD5XG9MMow==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "aer",
+        "spiritus"
+      ]
+    },
+    "spiritus": {
+      "key": "spiritus",
+      "name": "Spiritus",
+      "localizedName": "要素: Spiritus",
+      "description": "灵魂",
+      "hash": "qhqWI6NINGi4YWMWtHSYfw==",
+      "icon": "image/Aspect~0~qhqWI6NINGi4YWMWtHSYfw==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~qhqWI6NINGi4YWMWtHSYfw==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "victus",
+        "mortuus"
+      ]
+    },
+    "strontio": {
+      "key": "strontio",
+      "name": "Strontio",
+      "localizedName": "要素: Strontio",
+      "description": "Stupidness, Incompetence",
+      "hash": "5DyTRPs8MJ6PYX4G0eRZqw==",
+      "icon": "image/Aspect~0~5DyTRPs8MJ6PYX4G0eRZqw==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~5DyTRPs8MJ6PYX4G0eRZqw==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "cognitio",
+        "perditio"
+      ]
+    },
+    "superbia": {
+      "key": "superbia",
+      "name": "Superbia",
+      "localizedName": "要素: Superbia",
+      "description": "傲慢,自大,轻蔑",
+      "hash": "Q4nRW5lBNBWlzyGj2otx4A==",
+      "icon": "image/Aspect~0~Q4nRW5lBNBWlzyGj2otx4A==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~Q4nRW5lBNBWlzyGj2otx4A==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "volatus",
+        "vacuos"
+      ]
+    },
+    "tabernus": {
+      "key": "tabernus",
+      "name": "Tabernus",
+      "localizedName": "要素: Tabernus",
+      "description": "靴子,穿越",
+      "hash": "nEjO6v9lPa-VJWzGjJeW-g==",
+      "icon": "image/Aspect~0~nEjO6v9lPa-VJWzGjJeW-g==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~nEjO6v9lPa-VJWzGjJeW-g==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "tutamen",
+        "iter"
+      ]
+    },
+    "telum": {
+      "key": "telum",
+      "name": "Telum",
+      "localizedName": "要素: Telum",
+      "description": "武器,攻击,伤害",
+      "hash": "QTNcwPhBNKCU_xKlq6Y_kA==",
+      "icon": "image/Aspect~0~QTNcwPhBNKCU_xKlq6Y_kA==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~QTNcwPhBNKCU_xKlq6Y_kA==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "instrumentum",
+        "ignis"
+      ]
+    },
+    "tempestas": {
+      "key": "tempestas",
+      "name": "Tempestas",
+      "localizedName": "要素: Tempestas",
+      "description": "气候",
+      "hash": "x_Sm1fPpOsaibfaWr6X2dA==",
+      "icon": "image/Aspect~0~x_Sm1fPpOsaibfaWr6X2dA==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~x_Sm1fPpOsaibfaWr6X2dA==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "aer",
+        "aqua"
+      ]
+    },
+    "tempus": {
+      "key": "tempus",
+      "name": "Tempus",
+      "localizedName": "要素: Tempus",
+      "description": "时间,须臾,永远",
+      "hash": "5DVPto4sMru9OuQt5wSOyQ==",
+      "icon": "image/Aspect~0~5DVPto4sMru9OuQt5wSOyQ==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~5DVPto4sMru9OuQt5wSOyQ==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "vacuos",
+        "ordo"
+      ]
+    },
+    "tenebrae": {
+      "key": "tenebrae",
+      "name": "Tenebrae",
+      "localizedName": "要素: Tenebrae",
+      "description": "黑暗",
+      "hash": "U0kPtlGGOm-fSAQYNW0zOw==",
+      "icon": "image/Aspect~0~U0kPtlGGOm-fSAQYNW0zOw==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~U0kPtlGGOm-fSAQYNW0zOw==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "vacuos",
+        "lux"
+      ]
+    },
+    "terminus": {
+      "key": "terminus",
+      "name": "Terminus",
+      "localizedName": "要素: Terminus",
+      "description": "游戏之终结,启示录,天启,粉碎一切",
+      "hash": "httSNrPKMtyhMClS5CI0hA==",
+      "icon": "image/Aspect~0~httSNrPKMtyhMClS5CI0hA==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~httSNrPKMtyhMClS5CI0hA==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "lucrum",
+        "alienis"
+      ]
+    },
+    "terra": {
+      "key": "terra",
+      "name": "Terra",
+      "localizedName": "要素: Terra",
+      "description": "地",
+      "hash": "-nKmPi5gMCSOtUhFvr9bmQ==",
+      "icon": "image/Aspect~0~-nKmPi5gMCSOtUhFvr9bmQ==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~-nKmPi5gMCSOtUhFvr9bmQ==",
+      "meta": 0,
+      "primal": true,
+      "components": []
+    },
+    "tutamen": {
+      "key": "tutamen",
+      "name": "Tutamen",
+      "localizedName": "要素: Tutamen",
+      "description": "装备,防护",
+      "hash": "zH-kGDdhOi61DIROt1fupg==",
+      "icon": "image/Aspect~0~zH-kGDdhOi61DIROt1fupg==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~zH-kGDdhOi61DIROt1fupg==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "instrumentum",
+        "terra"
+      ]
+    },
+    "vacuos": {
+      "key": "vacuos",
+      "name": "Vacuos",
+      "localizedName": "要素: Vacuos",
+      "description": "虚空",
+      "hash": "1-7eh6qDP-OaujRqJfbFhg==",
+      "icon": "image/Aspect~0~1-7eh6qDP-OaujRqJfbFhg==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~1-7eh6qDP-OaujRqJfbFhg==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "aer",
+        "perditio"
+      ]
+    },
+    "venenum": {
+      "key": "venenum",
+      "name": "Venenum",
+      "localizedName": "要素: Venenum",
+      "description": "毒药",
+      "hash": "MuB2lsJuNdmCF4lhqwcbrg==",
+      "icon": "image/Aspect~0~MuB2lsJuNdmCF4lhqwcbrg==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~MuB2lsJuNdmCF4lhqwcbrg==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "aqua",
+        "perditio"
+      ]
+    },
+    "victus": {
+      "key": "victus",
+      "name": "Victus",
+      "localizedName": "要素: Victus",
+      "description": "生命",
+      "hash": "U9L_Rta5NaW5FrcPOUZD3g==",
+      "icon": "image/Aspect~0~U9L_Rta5NaW5FrcPOUZD3g==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~U9L_Rta5NaW5FrcPOUZD3g==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "aqua",
+        "terra"
+      ]
+    },
+    "vinculum": {
+      "key": "vinculum",
+      "name": "Vinculum",
+      "localizedName": "要素: Vinculum",
+      "description": "陷阱,监禁",
+      "hash": "1R-2txyrPJmXA6XkPrvt1w==",
+      "icon": "image/Aspect~0~1R-2txyrPJmXA6XkPrvt1w==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~1R-2txyrPJmXA6XkPrvt1w==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "motus",
+        "perditio"
+      ]
+    },
+    "vitium": {
+      "key": "vitium",
+      "name": "Vitium",
+      "localizedName": "要素: Vitium",
+      "description": "腐化",
+      "hash": "ggXIdIc2MF-Q6GX1ZFbmZQ==",
+      "icon": "image/Aspect~0~ggXIdIc2MF-Q6GX1ZFbmZQ==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~ggXIdIc2MF-Q6GX1ZFbmZQ==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "praecantatio",
+        "perditio"
+      ]
+    },
+    "vitreus": {
+      "key": "vitreus",
+      "name": "Vitreus",
+      "localizedName": "要素: Vitreus",
+      "description": "水晶,玻璃,澄澈",
+      "hash": "t8exCO8yOae9HRCzrI36jQ==",
+      "icon": "image/Aspect~0~t8exCO8yOae9HRCzrI36jQ==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~t8exCO8yOae9HRCzrI36jQ==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "terra",
+        "ordo"
+      ]
+    },
+    "volatus": {
+      "key": "volatus",
+      "name": "Volatus",
+      "localizedName": "要素: Volatus",
+      "description": "飞行",
+      "hash": "Lk6wUrkjPjCe-YqOxfsl8w==",
+      "icon": "image/Aspect~0~Lk6wUrkjPjCe-YqOxfsl8w==.png",
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~Lk6wUrkjPjCe-YqOxfsl8w==",
+      "meta": 0,
+      "primal": false,
+      "components": [
+        "aer",
+        "motus"
+      ]
+    }
+  },
+  "hashToKey": {
+    "-WZow0DtPpGnHLV45_DGeQ==": "machina",
+    "-fRy34lCPpilc8Z_sZSJ_A==": "custom5",
+    "-nKmPi5gMCSOtUhFvr9bmQ==": "terra",
+    "1-7eh6qDP-OaujRqJfbFhg==": "vacuos",
+    "1R-2txyrPJmXA6XkPrvt1w==": "vinculum",
+    "1m-dABluMX2uBT_FhScEAg==": "infernus",
+    "4xKBfaTGMJeUx49ayvYeAQ==": "iter",
+    "5DVPto4sMru9OuQt5wSOyQ==": "tempus",
+    "5DyTRPs8MJ6PYX4G0eRZqw==": "strontio",
+    "6tN9HgR2Pf-iJ_KPD-XjZw==": "auram",
+    "6vCtvcj5P5SqrhJ0yJ_2rw==": "mortuus",
+    "6wyGiXkuM9GsneM2VLTZnA==": "cognitio",
+    "8EsH2RaJPrKrDtxtBaDAHw==": "lux",
+    "AksLhS6LMPm8ybiVt8FOQg==": "caelum",
+    "BCSsmpzMN46WiD5XG9MMow==": "sensus",
+    "BtMtkzYEPK-mSyce4dQWdA==": "corpus",
+    "C50BANQcPpyh6b5ZrtJRzg==": "electrum",
+    "D3Aoy7N3OEGbK51rIZ0eqQ==": "gelum",
+    "Dn_GtxS4OJG4_gPw2oHb9Q==": "sano",
+    "E-fKHZn8PFGDOccGLNcGlQ==": "motus",
+    "HCGuZvZZN2uRU9nfPMn0KQ==": "radio",
+    "HmIkkQgLO9G_-BPPnioU-g==": "custom4",
+    "JSVWkWxqNvSvkUm-PvuYrQ==": "ignis",
+    "KhtAvW0yPHy54jAIHjPecQ==": "aer",
+    "L-H5p000MF6BDWDwXnIxMA==": "humanus",
+    "L6Zm8UJCPR-kN8Pyc-rpRQ==": "fames",
+    "Lk6wUrkjPjCe-YqOxfsl8w==": "volatus",
+    "MuB2lsJuNdmCF4lhqwcbrg==": "venenum",
+    "Na3q2u0lNYWL36IAyx7FsQ==": "ordo",
+    "NuRAe6LIMcyuW4RDj63sRA==": "perfodio",
+    "P7pQ6Lf8P7GUv5XBLFQiWQ==": "potentia",
+    "Poumcd6dObyMFklMmRZhCA==": "desidia",
+    "Q4nRW5lBNBWlzyGj2otx4A==": "superbia",
+    "QDaA6TmDNCevYfB1_1X5_g==": "arbor",
+    "QTNcwPhBNKCU_xKlq6Y_kA==": "telum",
+    "RhT0hi7oORaI1LfXp1nYrg==": "pannus",
+    "RnKdNXSwNY-iF03t_6-hVA==": "alienis",
+    "U0kPtlGGOm-fSAQYNW0zOw==": "tenebrae",
+    "U9L_Rta5NaW5FrcPOUZD3g==": "victus",
+    "VSal_9xpNbOmJsmoVLzE3w==": "magneto",
+    "WWH64YZjMzau-0OkV6zNjg==": "perditio",
+    "X0VrwVqpNMKt2E32zEZXHA==": "custom2",
+    "XLChheNtPDOdHO9K1DlOtw==": "custom1",
+    "YNC_PFRwN3-xtzjumexY-A==": "meto",
+    "YQCLwqbQOsyWc7-EbyaqiQ==": "gula",
+    "ZCUXhgvfNBG3PL8lH9zmNA==": "ira",
+    "afM_KWYzPDmY5GO8JROG4g==": "praecantatio",
+    "aoygy2N2Nja277OSV7JRwQ==": "fabrico",
+    "fAEKF3UUPgWZnEuxrVzERA==": "aer",
+    "ggXIdIc2MF-Q6GX1ZFbmZQ==": "vitium",
+    "httSNrPKMtyhMClS5CI0hA==": "terminus",
+    "jrBYqg9GNC67fgH4YO1Ciw==": "permutatio",
+    "k7P4LDyCMwOOlzWi06MCOw==": "bestia",
+    "l1RE8amgNwmfR8ghqw7H7Q==": "metallum",
+    "lb6OgOxrMDST09phum6CDQ==": "aqua",
+    "ldfQSXiFOV6pd_1_EJOAgQ==": "instrumentum",
+    "nEjO6v9lPa-VJWzGjJeW-g==": "tabernus",
+    "nKbQ0Sa2NhedmdZ6Vnnmsg==": "herba",
+    "qXBLKgqdPUaHvCjH-kYluA==": "custom3",
+    "qhqWI6NINGi4YWMWtHSYfw==": "spiritus",
+    "rK3PeeWdPXaqfe0NPJjSWg==": "nebrisum",
+    "ra0yIkxNMrePWO5SXchRzA==": "exanimis",
+    "s6V8MqcaPGax8vgKFH5wIw==": "luxuria",
+    "t8exCO8yOae9HRCzrI36jQ==": "vitreus",
+    "tHfwXp_iOUy1TihQGhvXpw==": "limus",
+    "vmSiwpQGOyih-5J8QGrxyg==": "messis",
+    "x_Sm1fPpOsaibfaWr6X2dA==": "tempestas",
+    "ygCZCVUhNvOsUg1MyAAorw==": "invidia",
+    "zH-kGDdhOi61DIROt1fupg==": "tutamen",
+    "ziktSttgODmt120cOv1Kcg==": "lucrum"
+  },
+  "ignoredRows": [
+    {
+      "itemId": "i~thaumcraftneiplugin~Aspect~0~KhtAvW0yPHy54jAIHjPecQ==",
+      "key": "aer",
+      "name": "Aer",
+      "hash": "KhtAvW0yPHy54jAIHjPecQ==",
+      "reason": "hash not present in project image/ canonical icon set"
+    }
+  ]
+}

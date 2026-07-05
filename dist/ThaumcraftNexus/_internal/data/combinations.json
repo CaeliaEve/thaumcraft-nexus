@@ -1,0 +1,971 @@
+{
+  "schema": "thaumcraft-nexus/combinations/v1",
+  "source": {
+    "nesqlRoot": "local NESQL export, supplied by --nesql or THAUM_NEXUS_NESQL",
+    "items": "items/thaumcraftneiplugin/items.json.gz",
+    "payloads": "raw-export/special/thaumcraft/payloads.jsonl.gz",
+    "projectImageDir": "image",
+    "generatedAtUtc": "2026-07-04T10:58:20.979914+00:00",
+    "note": "NESQL source files are read-only inputs; generated files live under this project data/ directory."
+  },
+  "primal": [
+    "aer",
+    "aqua",
+    "ignis",
+    "ordo",
+    "perditio",
+    "terra"
+  ],
+  "combinationCount": 63,
+  "combinations": [
+    {
+      "output": "alienis",
+      "components": [
+        "vacuos",
+        "tenebrae"
+      ],
+      "sortedPair": "tenebrae+vacuos",
+      "payloadLine": 6837,
+      "recipeId": "r~x2rhb2XxPxuO-mUBuvErRw=="
+    },
+    {
+      "output": "arbor",
+      "components": [
+        "aer",
+        "herba"
+      ],
+      "sortedPair": "aer+herba",
+      "payloadLine": 810,
+      "recipeId": "r~6MuPBsDIMk6fkUa-tP_z6w=="
+    },
+    {
+      "output": "auram",
+      "components": [
+        "praecantatio",
+        "aer"
+      ],
+      "sortedPair": "aer+praecantatio",
+      "payloadLine": 490,
+      "recipeId": "r~3HVGvP51Mea9ZLzDSZ7jRw=="
+    },
+    {
+      "output": "bestia",
+      "components": [
+        "motus",
+        "victus"
+      ],
+      "sortedPair": "motus+victus",
+      "payloadLine": 4636,
+      "recipeId": "r~dgRw-QYjNyK49mICxkaSpw=="
+    },
+    {
+      "output": "caelum",
+      "components": [
+        "vitreus",
+        "metallum"
+      ],
+      "sortedPair": "metallum+vitreus",
+      "payloadLine": 6905,
+      "recipeId": "r~xaO0GvdCPLCX7FkUVImn3g=="
+    },
+    {
+      "output": "cognitio",
+      "components": [
+        "ignis",
+        "spiritus"
+      ],
+      "sortedPair": "ignis+spiritus",
+      "payloadLine": 333,
+      "recipeId": "r~1mFJIiZHOByiKWvG_GJhDg=="
+    },
+    {
+      "output": "corpus",
+      "components": [
+        "mortuus",
+        "bestia"
+      ],
+      "sortedPair": "bestia+mortuus",
+      "payloadLine": 511,
+      "recipeId": "r~3SPwvFKyN-OnXJfX8ia04Q=="
+    },
+    {
+      "output": "custom1",
+      "components": [
+        "cognitio",
+        "ordo"
+      ],
+      "sortedPair": "cognitio+ordo",
+      "payloadLine": 3459,
+      "recipeId": "r~Ti668wtfNT24zVseqk-hvg=="
+    },
+    {
+      "output": "custom2",
+      "components": [
+        "cognitio",
+        "vitium"
+      ],
+      "sortedPair": "cognitio+vitium",
+      "payloadLine": 2937,
+      "recipeId": "r~P6wHseL0Os-nqR9Tx0_9QA=="
+    },
+    {
+      "output": "custom3",
+      "components": [
+        "vacuos",
+        "motus"
+      ],
+      "sortedPair": "motus+vacuos",
+      "payloadLine": 2329,
+      "recipeId": "r~JuGaj-0LPSyqTVcD4_Qdxg=="
+    },
+    {
+      "output": "custom4",
+      "components": [
+        "lux",
+        "custom3"
+      ],
+      "sortedPair": "custom3+lux",
+      "payloadLine": 1245,
+      "recipeId": "r~ARJRO51GOIiBKw4JBsWnhQ=="
+    },
+    {
+      "output": "custom5",
+      "components": [
+        "humanus",
+        "iter"
+      ],
+      "sortedPair": "humanus+iter",
+      "payloadLine": 2616,
+      "recipeId": "r~MLXwHUb2P5iSmD17iTp1iQ=="
+    },
+    {
+      "output": "desidia",
+      "components": [
+        "vinculum",
+        "spiritus"
+      ],
+      "sortedPair": "spiritus+vinculum",
+      "payloadLine": 5185,
+      "recipeId": "r~iQASlOz1MKuEaBhdrMwA4A=="
+    },
+    {
+      "output": "electrum",
+      "components": [
+        "potentia",
+        "machina"
+      ],
+      "sortedPair": "machina+potentia",
+      "payloadLine": 6770,
+      "recipeId": "r~wJhEvjpPPIGTzpnlEy0DKA=="
+    },
+    {
+      "output": "exanimis",
+      "components": [
+        "motus",
+        "mortuus"
+      ],
+      "sortedPair": "mortuus+motus",
+      "payloadLine": 4008,
+      "recipeId": "r~YwEYOFI4Npm8kkC4iApg5Q=="
+    },
+    {
+      "output": "fabrico",
+      "components": [
+        "humanus",
+        "instrumentum"
+      ],
+      "sortedPair": "humanus+instrumentum",
+      "payloadLine": 5849,
+      "recipeId": "r~o0TnDcCsOzeV_PyGhgpFuQ=="
+    },
+    {
+      "output": "fames",
+      "components": [
+        "victus",
+        "vacuos"
+      ],
+      "sortedPair": "vacuos+victus",
+      "payloadLine": 7042,
+      "recipeId": "r~yimhtTnKPfmOHL5f6coTrQ=="
+    },
+    {
+      "output": "gelum",
+      "components": [
+        "ignis",
+        "perditio"
+      ],
+      "sortedPair": "ignis+perditio",
+      "payloadLine": 2255,
+      "recipeId": "r~JCPMfXimN6C3pk0v2iVSnA=="
+    },
+    {
+      "output": "gula",
+      "components": [
+        "fames",
+        "vacuos"
+      ],
+      "sortedPair": "fames+vacuos",
+      "payloadLine": 5090,
+      "recipeId": "r~hd7h5kYwPFOgB_WMNsb19Q=="
+    },
+    {
+      "output": "herba",
+      "components": [
+        "victus",
+        "terra"
+      ],
+      "sortedPair": "terra+victus",
+      "payloadLine": 1983,
+      "recipeId": "r~Ghux3JyvOR-I7OFY3R-rkg=="
+    },
+    {
+      "output": "humanus",
+      "components": [
+        "bestia",
+        "cognitio"
+      ],
+      "sortedPair": "bestia+cognitio",
+      "payloadLine": 2521,
+      "recipeId": "r~LcjlBIjVM8CnBP_Don3e7g=="
+    },
+    {
+      "output": "infernus",
+      "components": [
+        "ignis",
+        "praecantatio"
+      ],
+      "sortedPair": "ignis+praecantatio",
+      "payloadLine": 5132,
+      "recipeId": "r~huQ5G5lSPy-4Hw6eSPO1_A=="
+    },
+    {
+      "output": "instrumentum",
+      "components": [
+        "humanus",
+        "ordo"
+      ],
+      "sortedPair": "humanus+ordo",
+      "payloadLine": 531,
+      "recipeId": "r~3hOCrYaMP3iiGwtOCrspLA=="
+    },
+    {
+      "output": "invidia",
+      "components": [
+        "sensus",
+        "fames"
+      ],
+      "sortedPair": "fames+sensus",
+      "payloadLine": 3540,
+      "recipeId": "r~UQ4EFN3MMy6dWd5Vaabq0Q=="
+    },
+    {
+      "output": "ira",
+      "components": [
+        "telum",
+        "ignis"
+      ],
+      "sortedPair": "ignis+telum",
+      "payloadLine": 5125,
+      "recipeId": "r~hrvsyGjjNRycOHWMfQfqUw=="
+    },
+    {
+      "output": "iter",
+      "components": [
+        "motus",
+        "terra"
+      ],
+      "sortedPair": "motus+terra",
+      "payloadLine": 4703,
+      "recipeId": "r~eDPY6lpqN4e460LKh02dqw=="
+    },
+    {
+      "output": "limus",
+      "components": [
+        "victus",
+        "aqua"
+      ],
+      "sortedPair": "aqua+victus",
+      "payloadLine": 3215,
+      "recipeId": "r~RTc6rcKINNe8fKNZRX8e5g=="
+    },
+    {
+      "output": "lucrum",
+      "components": [
+        "humanus",
+        "fames"
+      ],
+      "sortedPair": "fames+humanus",
+      "payloadLine": 4639,
+      "recipeId": "r~dhLK2WONPBuZqq8jSHxW8Q=="
+    },
+    {
+      "output": "lux",
+      "components": [
+        "aer",
+        "ignis"
+      ],
+      "sortedPair": "aer+ignis",
+      "payloadLine": 596,
+      "recipeId": "r~4IoPOY7pM3mo1-Ko88S6uQ=="
+    },
+    {
+      "output": "luxuria",
+      "components": [
+        "corpus",
+        "fames"
+      ],
+      "sortedPair": "corpus+fames",
+      "payloadLine": 6453,
+      "recipeId": "r~tHvrc3asO-mTneZJ7kEcXg=="
+    },
+    {
+      "output": "machina",
+      "components": [
+        "motus",
+        "instrumentum"
+      ],
+      "sortedPair": "instrumentum+motus",
+      "payloadLine": 892,
+      "recipeId": "r~7DayVaj0OYaPI6nYs-zu4A=="
+    },
+    {
+      "output": "magneto",
+      "components": [
+        "metallum",
+        "iter"
+      ],
+      "sortedPair": "iter+metallum",
+      "payloadLine": 3383,
+      "recipeId": "r~T-NF7tQQNb6qq4tzCxvLNA=="
+    },
+    {
+      "output": "messis",
+      "components": [
+        "herba",
+        "humanus"
+      ],
+      "sortedPair": "herba+humanus",
+      "payloadLine": 4954,
+      "recipeId": "r~gUhKb_2sNMOJxkp4iTKdtQ=="
+    },
+    {
+      "output": "metallum",
+      "components": [
+        "terra",
+        "vitreus"
+      ],
+      "sortedPair": "terra+vitreus",
+      "payloadLine": 6253,
+      "recipeId": "r~rXITF4V2PSmpI_YAyAqHQg=="
+    },
+    {
+      "output": "meto",
+      "components": [
+        "messis",
+        "instrumentum"
+      ],
+      "sortedPair": "instrumentum+messis",
+      "payloadLine": 5542,
+      "recipeId": "r~lNCUnvmXNJqEtahDHjJfYw=="
+    },
+    {
+      "output": "mortuus",
+      "components": [
+        "victus",
+        "perditio"
+      ],
+      "sortedPair": "perditio+victus",
+      "payloadLine": 1759,
+      "recipeId": "r~ErxGbpLMMAGzPT5vlBpVMQ=="
+    },
+    {
+      "output": "motus",
+      "components": [
+        "aer",
+        "ordo"
+      ],
+      "sortedPair": "aer+ordo",
+      "payloadLine": 6511,
+      "recipeId": "r~tuRxJ9A1P_KPsIXoYaGJwQ=="
+    },
+    {
+      "output": "nebrisum",
+      "components": [
+        "perfodio",
+        "lucrum"
+      ],
+      "sortedPair": "lucrum+perfodio",
+      "payloadLine": 6395,
+      "recipeId": "r~slVqC7EbOcmDe6AnFr6FfA=="
+    },
+    {
+      "output": "pannus",
+      "components": [
+        "instrumentum",
+        "bestia"
+      ],
+      "sortedPair": "bestia+instrumentum",
+      "payloadLine": 4560,
+      "recipeId": "r~d-A08dwwNUG4QQNeFEg7GA=="
+    },
+    {
+      "output": "perfodio",
+      "components": [
+        "humanus",
+        "terra"
+      ],
+      "sortedPair": "humanus+terra",
+      "payloadLine": 1928,
+      "recipeId": "r~GF1wIPocODSoK5Ti36Ceeg=="
+    },
+    {
+      "output": "permutatio",
+      "components": [
+        "perditio",
+        "ordo"
+      ],
+      "sortedPair": "ordo+perditio",
+      "payloadLine": 4976,
+      "recipeId": "r~gi3OvRMRNoCJh0tBeTOg_w=="
+    },
+    {
+      "output": "potentia",
+      "components": [
+        "ordo",
+        "ignis"
+      ],
+      "sortedPair": "ignis+ordo",
+      "payloadLine": 1518,
+      "recipeId": "r~CfnfdBMhOHqv7_E64DwCMg=="
+    },
+    {
+      "output": "praecantatio",
+      "components": [
+        "vacuos",
+        "potentia"
+      ],
+      "sortedPair": "potentia+vacuos",
+      "payloadLine": 6138,
+      "recipeId": "r~qb5utBHlMlm5sq3v3y6MHA=="
+    },
+    {
+      "output": "radio",
+      "components": [
+        "lux",
+        "potentia"
+      ],
+      "sortedPair": "lux+potentia",
+      "payloadLine": 5306,
+      "recipeId": "r~jLz_f1U8MFueVB1eQqJySQ=="
+    },
+    {
+      "output": "sano",
+      "components": [
+        "victus",
+        "ordo"
+      ],
+      "sortedPair": "ordo+victus",
+      "payloadLine": 467,
+      "recipeId": "r~2zbfSGrKN9m_hpWK4W9V1A=="
+    },
+    {
+      "output": "sensus",
+      "components": [
+        "aer",
+        "spiritus"
+      ],
+      "sortedPair": "aer+spiritus",
+      "payloadLine": 3580,
+      "recipeId": "r~UpSvbuIMPlm_dscRzju_pg=="
+    },
+    {
+      "output": "spiritus",
+      "components": [
+        "victus",
+        "mortuus"
+      ],
+      "sortedPair": "mortuus+victus",
+      "payloadLine": 818,
+      "recipeId": "r~6OzsHwmHPAmLl9x5olvwKw=="
+    },
+    {
+      "output": "strontio",
+      "components": [
+        "cognitio",
+        "perditio"
+      ],
+      "sortedPair": "cognitio+perditio",
+      "payloadLine": 6616,
+      "recipeId": "r~v6BHKkNuOnKymxcjEE7QFw=="
+    },
+    {
+      "output": "superbia",
+      "components": [
+        "volatus",
+        "vacuos"
+      ],
+      "sortedPair": "vacuos+volatus",
+      "payloadLine": 6130,
+      "recipeId": "r~qSVeat1LNS-PeHIxwYEkwQ=="
+    },
+    {
+      "output": "tabernus",
+      "components": [
+        "tutamen",
+        "iter"
+      ],
+      "sortedPair": "iter+tutamen",
+      "payloadLine": 6364,
+      "recipeId": "r~sX0EiuxpPJu7wAPbELwO1w=="
+    },
+    {
+      "output": "telum",
+      "components": [
+        "instrumentum",
+        "ignis"
+      ],
+      "sortedPair": "ignis+instrumentum",
+      "payloadLine": 6600,
+      "recipeId": "r~uwRn3C_LPVqP8z5p8LsrnA=="
+    },
+    {
+      "output": "tempestas",
+      "components": [
+        "aer",
+        "aqua"
+      ],
+      "sortedPair": "aer+aqua",
+      "payloadLine": 3275,
+      "recipeId": "r~S2YZ1zILP3qyJ4gbO-sbFw=="
+    },
+    {
+      "output": "tempus",
+      "components": [
+        "vacuos",
+        "ordo"
+      ],
+      "sortedPair": "ordo+vacuos",
+      "payloadLine": 5326,
+      "recipeId": "r~jWihPO_kNAa3S58ha6OJxw=="
+    },
+    {
+      "output": "tenebrae",
+      "components": [
+        "vacuos",
+        "lux"
+      ],
+      "sortedPair": "lux+vacuos",
+      "payloadLine": 1478,
+      "recipeId": "r~CQPCM5qvN4SMDG_mSnsMjw=="
+    },
+    {
+      "output": "terminus",
+      "components": [
+        "lucrum",
+        "alienis"
+      ],
+      "sortedPair": "alienis+lucrum",
+      "payloadLine": 5497,
+      "recipeId": "r~kxwTtThhNw6tQCVsL4LjhA=="
+    },
+    {
+      "output": "tutamen",
+      "components": [
+        "instrumentum",
+        "terra"
+      ],
+      "sortedPair": "instrumentum+terra",
+      "payloadLine": 1703,
+      "recipeId": "r~EHBmyqwqNVi_nXc9aVKuQw=="
+    },
+    {
+      "output": "vacuos",
+      "components": [
+        "aer",
+        "perditio"
+      ],
+      "sortedPair": "aer+perditio",
+      "payloadLine": 1756,
+      "recipeId": "r~EpZxg3-hOsCDIFZf7IYuLA=="
+    },
+    {
+      "output": "venenum",
+      "components": [
+        "aqua",
+        "perditio"
+      ],
+      "sortedPair": "aqua+perditio",
+      "payloadLine": 3912,
+      "recipeId": "r~Y3o8Ol0bNwa_MixrKXGSPA=="
+    },
+    {
+      "output": "victus",
+      "components": [
+        "aqua",
+        "terra"
+      ],
+      "sortedPair": "aqua+terra",
+      "payloadLine": 5890,
+      "recipeId": "r~oNkrXjv9MW2SOZReIGS0TA=="
+    },
+    {
+      "output": "vinculum",
+      "components": [
+        "motus",
+        "perditio"
+      ],
+      "sortedPair": "motus+perditio",
+      "payloadLine": 5034,
+      "recipeId": "r~hD2WCvEDNP2AB1M-iZc42A=="
+    },
+    {
+      "output": "vitium",
+      "components": [
+        "praecantatio",
+        "perditio"
+      ],
+      "sortedPair": "perditio+praecantatio",
+      "payloadLine": 4124,
+      "recipeId": "r~ZwVjYIVuNfuD7oz8VKISrg=="
+    },
+    {
+      "output": "vitreus",
+      "components": [
+        "terra",
+        "ordo"
+      ],
+      "sortedPair": "ordo+terra",
+      "payloadLine": 591,
+      "recipeId": "r~4FbAwyAbNQmngdEONWLr2A=="
+    },
+    {
+      "output": "volatus",
+      "components": [
+        "aer",
+        "motus"
+      ],
+      "sortedPair": "aer+motus",
+      "payloadLine": 6146,
+      "recipeId": "r~qgN8sP4JOauoxQ46tDws3g=="
+    }
+  ],
+  "byOutput": {
+    "alienis": [
+      "vacuos",
+      "tenebrae"
+    ],
+    "arbor": [
+      "aer",
+      "herba"
+    ],
+    "auram": [
+      "praecantatio",
+      "aer"
+    ],
+    "bestia": [
+      "motus",
+      "victus"
+    ],
+    "caelum": [
+      "vitreus",
+      "metallum"
+    ],
+    "cognitio": [
+      "ignis",
+      "spiritus"
+    ],
+    "corpus": [
+      "mortuus",
+      "bestia"
+    ],
+    "custom1": [
+      "cognitio",
+      "ordo"
+    ],
+    "custom2": [
+      "cognitio",
+      "vitium"
+    ],
+    "custom3": [
+      "vacuos",
+      "motus"
+    ],
+    "custom4": [
+      "lux",
+      "custom3"
+    ],
+    "custom5": [
+      "humanus",
+      "iter"
+    ],
+    "desidia": [
+      "vinculum",
+      "spiritus"
+    ],
+    "electrum": [
+      "potentia",
+      "machina"
+    ],
+    "exanimis": [
+      "motus",
+      "mortuus"
+    ],
+    "fabrico": [
+      "humanus",
+      "instrumentum"
+    ],
+    "fames": [
+      "victus",
+      "vacuos"
+    ],
+    "gelum": [
+      "ignis",
+      "perditio"
+    ],
+    "gula": [
+      "fames",
+      "vacuos"
+    ],
+    "herba": [
+      "victus",
+      "terra"
+    ],
+    "humanus": [
+      "bestia",
+      "cognitio"
+    ],
+    "infernus": [
+      "ignis",
+      "praecantatio"
+    ],
+    "instrumentum": [
+      "humanus",
+      "ordo"
+    ],
+    "invidia": [
+      "sensus",
+      "fames"
+    ],
+    "ira": [
+      "telum",
+      "ignis"
+    ],
+    "iter": [
+      "motus",
+      "terra"
+    ],
+    "limus": [
+      "victus",
+      "aqua"
+    ],
+    "lucrum": [
+      "humanus",
+      "fames"
+    ],
+    "lux": [
+      "aer",
+      "ignis"
+    ],
+    "luxuria": [
+      "corpus",
+      "fames"
+    ],
+    "machina": [
+      "motus",
+      "instrumentum"
+    ],
+    "magneto": [
+      "metallum",
+      "iter"
+    ],
+    "messis": [
+      "herba",
+      "humanus"
+    ],
+    "metallum": [
+      "terra",
+      "vitreus"
+    ],
+    "meto": [
+      "messis",
+      "instrumentum"
+    ],
+    "mortuus": [
+      "victus",
+      "perditio"
+    ],
+    "motus": [
+      "aer",
+      "ordo"
+    ],
+    "nebrisum": [
+      "perfodio",
+      "lucrum"
+    ],
+    "pannus": [
+      "instrumentum",
+      "bestia"
+    ],
+    "perfodio": [
+      "humanus",
+      "terra"
+    ],
+    "permutatio": [
+      "perditio",
+      "ordo"
+    ],
+    "potentia": [
+      "ordo",
+      "ignis"
+    ],
+    "praecantatio": [
+      "vacuos",
+      "potentia"
+    ],
+    "radio": [
+      "lux",
+      "potentia"
+    ],
+    "sano": [
+      "victus",
+      "ordo"
+    ],
+    "sensus": [
+      "aer",
+      "spiritus"
+    ],
+    "spiritus": [
+      "victus",
+      "mortuus"
+    ],
+    "strontio": [
+      "cognitio",
+      "perditio"
+    ],
+    "superbia": [
+      "volatus",
+      "vacuos"
+    ],
+    "tabernus": [
+      "tutamen",
+      "iter"
+    ],
+    "telum": [
+      "instrumentum",
+      "ignis"
+    ],
+    "tempestas": [
+      "aer",
+      "aqua"
+    ],
+    "tempus": [
+      "vacuos",
+      "ordo"
+    ],
+    "tenebrae": [
+      "vacuos",
+      "lux"
+    ],
+    "terminus": [
+      "lucrum",
+      "alienis"
+    ],
+    "tutamen": [
+      "instrumentum",
+      "terra"
+    ],
+    "vacuos": [
+      "aer",
+      "perditio"
+    ],
+    "venenum": [
+      "aqua",
+      "perditio"
+    ],
+    "victus": [
+      "aqua",
+      "terra"
+    ],
+    "vinculum": [
+      "motus",
+      "perditio"
+    ],
+    "vitium": [
+      "praecantatio",
+      "perditio"
+    ],
+    "vitreus": [
+      "terra",
+      "ordo"
+    ],
+    "volatus": [
+      "aer",
+      "motus"
+    ]
+  },
+  "bySortedPair": {
+    "aer+aqua": "tempestas",
+    "aer+herba": "arbor",
+    "aer+ignis": "lux",
+    "aer+motus": "volatus",
+    "aer+ordo": "motus",
+    "aer+perditio": "vacuos",
+    "aer+praecantatio": "auram",
+    "aer+spiritus": "sensus",
+    "alienis+lucrum": "terminus",
+    "aqua+perditio": "venenum",
+    "aqua+terra": "victus",
+    "aqua+victus": "limus",
+    "bestia+cognitio": "humanus",
+    "bestia+instrumentum": "pannus",
+    "bestia+mortuus": "corpus",
+    "cognitio+ordo": "custom1",
+    "cognitio+perditio": "strontio",
+    "cognitio+vitium": "custom2",
+    "corpus+fames": "luxuria",
+    "custom3+lux": "custom4",
+    "fames+humanus": "lucrum",
+    "fames+sensus": "invidia",
+    "fames+vacuos": "gula",
+    "herba+humanus": "messis",
+    "humanus+instrumentum": "fabrico",
+    "humanus+iter": "custom5",
+    "humanus+ordo": "instrumentum",
+    "humanus+terra": "perfodio",
+    "ignis+instrumentum": "telum",
+    "ignis+ordo": "potentia",
+    "ignis+perditio": "gelum",
+    "ignis+praecantatio": "infernus",
+    "ignis+spiritus": "cognitio",
+    "ignis+telum": "ira",
+    "instrumentum+messis": "meto",
+    "instrumentum+motus": "machina",
+    "instrumentum+terra": "tutamen",
+    "iter+metallum": "magneto",
+    "iter+tutamen": "tabernus",
+    "lucrum+perfodio": "nebrisum",
+    "lux+potentia": "radio",
+    "lux+vacuos": "tenebrae",
+    "machina+potentia": "electrum",
+    "metallum+vitreus": "caelum",
+    "mortuus+motus": "exanimis",
+    "mortuus+victus": "spiritus",
+    "motus+perditio": "vinculum",
+    "motus+terra": "iter",
+    "motus+vacuos": "custom3",
+    "motus+victus": "bestia",
+    "ordo+perditio": "permutatio",
+    "ordo+terra": "vitreus",
+    "ordo+vacuos": "tempus",
+    "ordo+victus": "sano",
+    "perditio+praecantatio": "vitium",
+    "perditio+victus": "mortuus",
+    "potentia+vacuos": "praecantatio",
+    "spiritus+vinculum": "desidia",
+    "tenebrae+vacuos": "alienis",
+    "terra+victus": "herba",
+    "terra+vitreus": "metallum",
+    "vacuos+victus": "fames",
+    "vacuos+volatus": "superbia"
+  }
+}
