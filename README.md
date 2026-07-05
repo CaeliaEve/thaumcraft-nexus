@@ -9,6 +9,7 @@
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-3776ab">
   <img alt="Java" src="https://img.shields.io/badge/java-8%20%7C%2017--25-f97316">
   <img alt="Type" src="https://img.shields.io/badge/type-external%20tool-16a34a">
+  <img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue">
 </p>
 
 Thaumcraft Nexus 是面向 **Thaumcraft 4 / GT New Horizons** 的外部桌面工具。项目通过本地 Java Agent 读取当前研究台中的研究笔记，将笔记结构转换为可计算的棋盘模型，计算合法要素连线路径，并可将求解结果应用回游戏内研究台。
@@ -28,6 +29,7 @@ Thaumcraft Nexus 是面向 **Thaumcraft 4 / GT New Horizons** 的外部桌面工
 - [数据文件](#数据文件)
 - [开发与验证](#开发与验证)
 - [项目结构](#项目结构)
+- [License](#license)
 - [使用边界与风险声明](#使用边界与风险声明)
 
 ## 核心能力
@@ -233,6 +235,14 @@ image/            要素图标和 GUI 资源
 tests/            回归测试
 start_gui.cmd     GUI 启动脚本
 ```
+
+## License
+
+Original source code in this project is licensed under the [Apache License 2.0](LICENSE).
+
+> Third-party names, icons, textures, aspect data, compatibility data, bundled runtimes, and dependency components remain the property of their respective owners. These third-party materials are not covered by the Apache License 2.0 grant for the project's original source code.
+>
+> See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details.
 
 ## 使用边界与风险声明
 

@@ -200,6 +200,13 @@ try {
         Copy-BundledJdk $ResolvedBundledJdk $AppDist
     }
 
+    foreach ($NoticeFile in @("LICENSE", "THIRD_PARTY_NOTICES.md")) {
+        $NoticePath = Join-Path $ProjectRoot $NoticeFile
+        if (Test-Path $NoticePath) {
+            Copy-Item -LiteralPath $NoticePath -Destination (Join-Path $AppDist $NoticeFile) -Force
+        }
+    }
+
     $PortableReadme = @"
 Thaumcraft Nexus 便携版
 
@@ -208,6 +215,10 @@ Thaumcraft Nexus 便携版
 2. 启动 GT New Horizons，进入游戏并打开神秘时代研究台。
 3. 双击 ThaumcraftNexus.exe。
 4. 在界面中读取当前笔记、自动放置，或使用轮椅模式批量处理。
+
+License:
+- Original source code is licensed under the Apache License 2.0. See LICENSE.
+- Third-party resources and dependency notices are documented in THIRD_PARTY_NOTICES.md.
 
 注意：
 - 本工具是外部辅助程序，不需要把文件放进整合包 mods 目录。
