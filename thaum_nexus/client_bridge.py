@@ -663,6 +663,7 @@ def ensure_agent_built(project_root: Path | str | None = None) -> Path:
         text=True,
         capture_output=True,
         timeout=60.0,
+        **_hidden_subprocess_kwargs(),
     )
     if completed.returncode != 0:
         raise RuntimeError(
@@ -755,7 +756,14 @@ def _run_attacher(
         cmd.append(str(pid))
 
     cwd = app_root() if is_frozen() else root
-    completed = subprocess.run(cmd, cwd=str(cwd), text=True, capture_output=True, timeout=timeout)
+    completed = subprocess.run(
+        cmd,
+        cwd=str(cwd),
+        text=True,
+        capture_output=True,
+        timeout=timeout,
+        **_hidden_subprocess_kwargs(),
+    )
     if completed.returncode != 0:
         raise RuntimeError(
             "Java agent attach failed with exit code "
@@ -779,6 +787,27 @@ def _parse_built_agent_path(stdout: str) -> Path | None:
         if text.endswith(".jar"):
             return Path(text)
     return None
+
+
+def _hidden_subprocess_kwargs() -> dict[str, Any]:
+    """Hide helper console windows spawned by java.exe/powershell.exe on Windows."""
+
+    if os.name != "nt":
+        return {}
+
+    kwargs: dict[str, Any] = {}
+    create_no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    if create_no_window:
+        kwargs["creationflags"] = create_no_window
+
+    startupinfo_factory = getattr(subprocess, "STARTUPINFO", None)
+    if startupinfo_factory is not None:
+        startupinfo = startupinfo_factory()
+        startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
+        startupinfo.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
+        kwargs["startupinfo"] = startupinfo
+
+    return kwargs
 
 
 def _project_root(project_root: Path | str | None = None) -> Path:

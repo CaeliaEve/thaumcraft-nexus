@@ -1,3 +1,4 @@
+import os
 import tempfile
 import threading
 import unittest
@@ -69,6 +70,15 @@ class ClientBridgeTests(unittest.TestCase):
             packaged.write_bytes(b"jar")
 
             self.assertEqual(client_bridge.agent_jar_path(root), packaged)
+
+    def test_hidden_subprocess_kwargs_prevent_console_popups_on_windows(self):
+        kwargs = client_bridge._hidden_subprocess_kwargs()
+
+        if os.name == "nt":
+            self.assertIn("creationflags", kwargs)
+            self.assertIn("startupinfo", kwargs)
+        else:
+            self.assertEqual(kwargs, {})
 
     def test_wheelchair_honors_stop_after_safe_inventory_scan(self):
         stop_event = threading.Event()
