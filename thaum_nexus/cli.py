@@ -8,10 +8,7 @@ from pathlib import Path
 from .data_model import BoardState
 from .knowledge_base import KnowledgeBase
 from .note_io import ResearchNote
-from .overlay import StaticOverlayRenderer
 from .solver import solve
-from .vision import AutoBoardReadConfig, AspectMatcher, BoardReadConfig, BoardReader, CalibrationProfile, HexPresenceDetector
-from .vision.aspect_matcher import Image
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -24,7 +21,6 @@ def main(argv: list[str] | None = None) -> int:
         "inventory-notes",
         "load-inventory-note",
         "wheelchair",
-        "read-screenshot",
         "-h",
         "--help",
     }:
@@ -107,37 +103,6 @@ def main(argv: list[str] | None = None) -> int:
     wheelchair_parser.add_argument("--no-build", action="store_true", help="Do not rebuild java-agent before attaching.")
     wheelchair_parser.add_argument("--timeout", type=float, default=60.0)
     wheelchair_parser.set_defaults(func=_wheelchair_command)
-
-    read_parser = subparsers.add_parser("read-screenshot", help="Read a BoardState from a screenshot image.")
-    read_parser.add_argument("image", type=Path, help="Screenshot image path")
-    read_parser.add_argument("--project-root", type=Path, default=None)
-    read_parser.add_argument(
-        "--calibration",
-        type=Path,
-        help="Calibration JSON. If omitted, image is treated as GUI-space coordinates.",
-    )
-    read_parser.add_argument(
-        "--coord",
-        action="append",
-        default=[],
-        help="Candidate hex coordinate q,r. Repeat for every candidate cell.",
-    )
-    read_parser.add_argument(
-        "--root",
-        action="append",
-        default=[],
-        help="Root hex coordinate q,r. Repeat for every root cell.",
-    )
-    read_parser.add_argument("--threshold", type=float, default=0.82)
-    read_parser.add_argument("--crop-radius", type=float, default=9.0)
-    read_parser.add_argument("--auto", action="store_true", help="Auto-detect present hex cells before matching aspects.")
-    read_parser.add_argument("--presence-threshold", type=float, default=0.20)
-    read_parser.add_argument("--presence-crop-radius", type=float, default=9.0)
-    read_parser.add_argument("--candidate-margin", type=float, default=0.0)
-    read_parser.add_argument("--solve", action="store_true", help="Also run solver on the read board.")
-    read_parser.add_argument("--render-output", type=Path, help="Write a PNG with solution placements rendered over the screenshot.")
-    read_parser.add_argument("--no-render-paths", action="store_true", help="Do not draw connection path lines in rendered output.")
-    read_parser.set_defaults(func=_read_screenshot_command)
 
     args = parser.parse_args(argv)
     return args.func(args)
@@ -254,92 +219,6 @@ def _wheelchair_command(args: argparse.Namespace) -> int:
     )
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
-
-
-def _read_screenshot_command(args: argparse.Namespace) -> int:
-    if Image is None:
-        raise RuntimeError("Pillow is required for read-screenshot")
-    kb = KnowledgeBase.load(args.project_root)
-    matcher = AspectMatcher.load(kb, args.project_root)
-    reader = BoardReader(kb, matcher)
-    image = Image.open(args.image).convert("RGBA")
-    calibration = (
-        CalibrationProfile.load(args.calibration)
-        if args.calibration
-        else CalibrationProfile(gui_left=0.0, gui_top=0.0, scale=1.0, profile_name="gui-image")
-    )
-    coords = [_parse_coord(value) for value in args.coord]
-    root_coords = [_parse_coord(value) for value in args.root]
-    if args.auto:
-        config = AutoBoardReadConfig.from_iterables(
-            search_coords=coords,
-            root_coords=root_coords,
-            match_threshold=args.threshold,
-            icon_crop_radius=args.crop_radius,
-            presence_crop_radius=args.presence_crop_radius,
-            candidate_margin=args.candidate_margin,
-        )
-        result = reader.read_auto(
-            image,
-            calibration,
-            config,
-            name=args.image.stem,
-            detector=HexPresenceDetector(min_score=args.presence_threshold),
-        )
-    else:
-        if not coords:
-            coords = sorted(set(root_coords))
-        config = BoardReadConfig.from_iterables(
-            coords,
-            root_coords=root_coords,
-            match_threshold=args.threshold,
-            crop_radius=args.crop_radius,
-        )
-        result = reader.read(image, calibration, config, name=args.image.stem)
-    payload: dict[str, object] = {
-        "board": result.board.to_dict(),
-        "reads": {
-            coord.key(): {
-                "aspect": read.aspect,
-                "score": read.score,
-                "cropBox": read.crop_box,
-            }
-            for coord, read in sorted(result.reads.items())
-        },
-        "presence": {
-            coord.key(): {
-                "present": presence.present,
-                "score": presence.score,
-                "alphaCoverage": presence.alpha_coverage,
-                "edgeScore": presence.edge_score,
-                "cropBox": presence.crop_box,
-            }
-            for coord, presence in sorted(result.presence.items())
-        },
-        "warnings": list(result.warnings),
-    }
-    solution = solve(result.board, kb) if args.solve or args.render_output else None
-    if solution is not None:
-        payload["solution"] = solution.to_dict()
-    if args.render_output:
-        if solution is None:
-            raise RuntimeError("--render-output requires a solution")
-        StaticOverlayRenderer(kb, project_root=args.project_root).save(
-            image,
-            solution,
-            calibration,
-            args.render_output,
-            show_paths=not args.no_render_paths,
-        )
-        payload["renderOutput"] = str(args.render_output)
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
-    return 0
-
-
-def _parse_coord(value: str):
-    from .data_model import HexCoord
-
-    return HexCoord.parse(value)
 
 
 if __name__ == "__main__":

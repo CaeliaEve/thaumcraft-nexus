@@ -19,7 +19,7 @@ THAUMCRAFT_HEX_TYPES: dict[int, CellKind] = {
 class ResearchNote:
     """Structured Thaumcraft research-note data exported from client NBT.
 
-    This is deliberately separate from the screenshot reader.  Thaumcraft
+    This is deliberately separate from GUI and client-attach code.  Thaumcraft
     stores the research minigame as a hex-grid NBT list, where:
 
     - type 0 = empty valid cell

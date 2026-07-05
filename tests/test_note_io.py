@@ -40,7 +40,7 @@ class NoteIoTests(unittest.TestCase):
         self.assertEqual(board.cell_at(HexCoord(1, 0)).kind, CellKind.PLACED)
         self.assertEqual(board.cell_at(HexCoord(1, 0)).aspect, "lux")
 
-    def test_note_board_can_be_solved_without_screenshot_recognition(self):
+    def test_note_board_can_be_solved_from_structured_data(self):
         kb = KnowledgeBase.load()
         board = load_note_board(FIXTURES / "two_roots_line_note.json")
 
