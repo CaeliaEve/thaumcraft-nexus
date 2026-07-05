@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import cos, pi, sin, sqrt
 from pathlib import Path
 
 from thaum_nexus.data_model import BoardState, CellKind, HexCoord, Solution
 from thaum_nexus.knowledge_base import KnowledgeBase
+from thaum_nexus.paths import resource_path, resource_root
 from thaum_nexus.vision.aspect_matcher import Image
 
 
@@ -14,7 +15,7 @@ class BoardImageRenderer:
     """Render a structured note/solution without relying on screenshots."""
 
     kb: KnowledgeBase
-    project_root: Path | str = Path(__file__).resolve().parents[2]
+    project_root: Path | str | None = field(default_factory=resource_root)
     hex_size: int = 34
     icon_size: int = 24
     margin: int = 58
@@ -125,7 +126,7 @@ class BoardImageRenderer:
         aspect = self.kb.require_aspect(aspect_key)
         icon_path = Path(aspect.icon)
         if not icon_path.is_absolute():
-            icon_path = Path(self.project_root) / icon_path
+            icon_path = resource_path(icon_path, self.project_root)
         icon = Image.open(icon_path).convert("RGBA").resize((self.icon_size, self.icon_size), Image.Resampling.LANCZOS)
         x = int(round(center[0] - icon.width / 2))
         y = int(round(center[1] - icon.height / 2))

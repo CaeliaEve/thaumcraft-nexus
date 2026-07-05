@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from thaum_nexus.data_model import Solution
 from thaum_nexus.knowledge_base import KnowledgeBase
+from thaum_nexus.paths import resource_path, resource_root
 from thaum_nexus.vision import CalibrationProfile, DEFAULT_GRID_GEOMETRY, HexGridGeometry
 from thaum_nexus.vision.aspect_matcher import Image
 
@@ -19,7 +20,7 @@ class StaticOverlayRenderer:
     """
 
     kb: KnowledgeBase
-    project_root: Path | str = Path(__file__).resolve().parents[2]
+    project_root: Path | str | None = field(default_factory=resource_root)
     geometry: HexGridGeometry = DEFAULT_GRID_GEOMETRY
     icon_size: int = 24
     ring_color: tuple[int, int, int, int] = (40, 220, 80, 230)
@@ -108,7 +109,7 @@ class StaticOverlayRenderer:
         aspect = self.kb.require_aspect(aspect_key)
         icon_path = Path(aspect.icon)
         if not icon_path.is_absolute():
-            icon_path = Path(self.project_root) / icon_path
+            icon_path = resource_path(icon_path, self.project_root)
         icon = Image.open(icon_path).convert("RGBA")
         size = max(8, int(round(self.icon_size * calibration.scale)))
         return icon.resize((size, size), Image.Resampling.LANCZOS)

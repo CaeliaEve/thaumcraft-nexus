@@ -61,6 +61,15 @@ class ClientBridgeTests(unittest.TestCase):
         self.assertTrue(plan.name.endswith("apply_plan.json"))
         self.assertTrue(result.name.endswith("apply_result.json"))
 
+    def test_agent_jar_path_prefers_packaged_jar_layout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            packaged = root / "java-agent" / "thaum-nexus-agent.jar"
+            packaged.parent.mkdir(parents=True)
+            packaged.write_bytes(b"jar")
+
+            self.assertEqual(client_bridge.agent_jar_path(root), packaged)
+
     def test_wheelchair_honors_stop_after_safe_inventory_scan(self):
         stop_event = threading.Event()
         stop_event.set()

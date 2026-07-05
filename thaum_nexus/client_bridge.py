@@ -11,6 +11,7 @@ from typing import Any, Callable
 from .data_model import Solution
 from .knowledge_base import KnowledgeBase
 from .note_io import ResearchNote
+from .paths import app_root, is_frozen, resource_root, runtime_root
 from .resources import ResourcePlan, plan_resource_usage
 from .solver import SearchConfig, solve
 
@@ -78,11 +79,11 @@ def export_current_note(
 
     root = _project_root(project_root)
     if output_path is None:
-        output = root / "runtime" / "current_note.json"
+        output = _resolve_runtime_path(project_root, None, "current_note.json")
     else:
         output = Path(output_path)
         if not output.is_absolute():
-            output = root / output
+            output = app_root(project_root) / output
     output.parent.mkdir(parents=True, exist_ok=True)
     if output.exists():
         output.unlink()
@@ -119,7 +120,7 @@ def read_and_solve_current_note(
 ) -> CurrentNoteResult:
     root = _project_root(project_root)
     payload, note_path, stdout, stderr = export_current_note(
-        root,
+        project_root,
         output_path=output_path,
         pid=pid,
         build_if_needed=build_if_needed,
@@ -161,8 +162,8 @@ def apply_solution_to_current_note(
     """Send solver placements to the open Thaumcraft research table."""
 
     root = _project_root(project_root)
-    plan = _resolve_runtime_path(root, plan_path, "apply_plan.json")
-    result = _resolve_runtime_path(root, result_path, "apply_result.json")
+    plan = _resolve_runtime_path(project_root, plan_path, "apply_plan.json")
+    result = _resolve_runtime_path(project_root, result_path, "apply_result.json")
     plan.parent.mkdir(parents=True, exist_ok=True)
     result.parent.mkdir(parents=True, exist_ok=True)
     if result.exists():
@@ -229,9 +230,8 @@ def read_solve_and_apply_current_note(
     build_if_needed: bool = True,
     timeout: float = 40.0,
 ) -> ApplyResult:
-    root = _project_root(project_root)
     current = read_and_solve_current_note(
-        root,
+        project_root,
         output_path=note_output_path,
         pid=pid,
         build_if_needed=build_if_needed,
@@ -239,7 +239,7 @@ def read_solve_and_apply_current_note(
     )
     apply_payload, apply_plan, apply_result, stdout, stderr = apply_solution_to_current_note(
         current.solution,
-        root,
+        project_root,
         resource_plan=current.resource_plan,
         plan_path=plan_path,
         result_path=result_path,
@@ -310,7 +310,7 @@ def export_inventory_notes(
     """Export research-note stacks from the open research-table container."""
 
     root = _project_root(project_root)
-    output = _resolve_runtime_path(root, output_path, "inventory_notes.json")
+    output = _resolve_runtime_path(project_root, output_path, "inventory_notes.json")
     output.parent.mkdir(parents=True, exist_ok=True)
     if output.exists():
         output.unlink()
@@ -347,7 +347,7 @@ def load_inventory_note_slot(
     """Move/swap one container slot into the research-table note slot."""
 
     root = _project_root(project_root)
-    result = _resolve_runtime_path(root, result_path, "load_note_result.json")
+    result = _resolve_runtime_path(project_root, result_path, "load_note_result.json")
     result.parent.mkdir(parents=True, exist_ok=True)
     if result.exists():
         result.unlink()
@@ -392,12 +392,11 @@ def solve_all_inventory_notes(
     synthesis/placement packets.
     """
 
-    root = _project_root(project_root)
     steps: list[dict[str, Any]] = []
     solved = 0
     _emit_progress(progress_callback, "inventory-scan", "正在扫描研究台和背包里的研究笔记")
     inventory, inventory_path, inv_stdout, inv_stderr = export_inventory_notes(
-        root,
+        project_root,
         pid=pid,
         build_if_needed=build_if_needed,
         timeout=min(timeout, 20.0),
@@ -435,7 +434,7 @@ def solve_all_inventory_notes(
                 iteration=iteration,
             )
             current = read_and_solve_current_note(
-                root,
+                project_root,
                 output_path=f"runtime/wheelchair_current_{iteration:02d}.json",
                 pid=pid,
                 build_if_needed=build_if_needed,
@@ -473,7 +472,7 @@ def solve_all_inventory_notes(
                 )
                 apply_payload, plan, result, stdout, stderr = apply_solution_to_current_note(
                     current.solution,
-                    root,
+                    project_root,
                     resource_plan=current.resource_plan,
                     plan_path=f"runtime/wheelchair_apply_plan_{iteration:02d}.json",
                     result_path=f"runtime/wheelchair_apply_result_{iteration:02d}.json",
@@ -527,7 +526,7 @@ def solve_all_inventory_notes(
             iteration=iteration,
         )
         inventory, inventory_path, stdout, stderr = export_inventory_notes(
-            root,
+            project_root,
             output_path=f"runtime/wheelchair_inventory_{iteration:02d}.json",
             pid=pid,
             build_if_needed=build_if_needed,
@@ -559,7 +558,7 @@ def solve_all_inventory_notes(
         )
         load_payload, load_result, load_stdout, load_stderr = load_inventory_note_slot(
             int(next_note["slot"]),
-            root,
+            project_root,
             result_path=f"runtime/wheelchair_load_{iteration:02d}.json",
             pid=pid,
             build_if_needed=build_if_needed,
@@ -633,12 +632,24 @@ def _cancelled_wheelchair_payload(
 def ensure_agent_built(project_root: Path | str | None = None) -> Path:
     root = _project_root(project_root)
     jar = agent_jar_path(root)
+    if is_frozen() and jar.exists():
+        return jar
+    if is_frozen():
+        raise RuntimeError(
+            "便携包内没有找到 Java Agent。请重新运行 scripts\\build_portable.ps1 打包，"
+            f"或确认文件存在：{jar}"
+        )
+
     sources = list((root / "java-agent" / "src" / "main" / "java").rglob("*.java"))
     newest_source = max((source.stat().st_mtime for source in sources), default=0.0)
     if jar.exists() and jar.stat().st_mtime >= newest_source:
         return jar
 
     build_script = root / "java-agent" / "build_agent.ps1"
+    if not build_script.exists():
+        if jar.exists():
+            return jar
+        raise RuntimeError(f"Java agent build script was not found: {build_script}")
     completed = subprocess.run(
         [
             "powershell",
@@ -669,6 +680,14 @@ def ensure_agent_built(project_root: Path | str | None = None) -> Path:
 
 def agent_jar_path(project_root: Path | str | None = None) -> Path:
     root = _project_root(project_root)
+    bundled_candidates = [
+        root / "java-agent" / "thaum-nexus-agent.jar",
+        app_root() / "java-agent" / "thaum-nexus-agent.jar",
+    ]
+    for candidate in bundled_candidates:
+        if candidate.exists():
+            return candidate
+
     latest = root / "java-agent" / "build" / "latest-agent.path"
     if latest.exists():
         try:
@@ -677,7 +696,10 @@ def agent_jar_path(project_root: Path | str | None = None) -> Path:
                 return candidate
         except OSError:
             pass
-    return root / "java-agent" / "build" / "thaum-nexus-agent.jar"
+    source_candidate = root / "java-agent" / "build" / "thaum-nexus-agent.jar"
+    if source_candidate.exists():
+        return source_candidate
+    return bundled_candidates[0] if is_frozen() else source_candidate
 
 
 def find_java() -> str:
@@ -732,7 +754,8 @@ def _run_attacher(
     if pid is not None:
         cmd.append(str(pid))
 
-    completed = subprocess.run(cmd, cwd=str(root), text=True, capture_output=True, timeout=timeout)
+    cwd = app_root() if is_frozen() else root
+    completed = subprocess.run(cmd, cwd=str(cwd), text=True, capture_output=True, timeout=timeout)
     if completed.returncode != 0:
         raise RuntimeError(
             "Java agent attach failed with exit code "
@@ -741,12 +764,12 @@ def _run_attacher(
     return completed
 
 
-def _resolve_runtime_path(root: Path, path: Path | str | None, default_name: str) -> Path:
+def _resolve_runtime_path(project_root: Path | str | None, path: Path | str | None, default_name: str) -> Path:
     if path is None:
-        return root / "runtime" / default_name
+        return runtime_root(project_root) / default_name
     resolved = Path(path)
     if not resolved.is_absolute():
-        resolved = root / resolved
+        resolved = app_root(project_root) / resolved
     return resolved
 
 
@@ -759,4 +782,4 @@ def _parse_built_agent_path(stdout: str) -> Path | None:
 
 
 def _project_root(project_root: Path | str | None = None) -> Path:
-    return Path(project_root) if project_root is not None else Path(__file__).resolve().parents[1]
+    return resource_root(project_root)

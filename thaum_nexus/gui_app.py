@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 from .knowledge_base import KnowledgeBase
 from .overlay import BoardImageRenderer
+from .paths import app_root, resource_root, runtime_root
 
 
 GITHUB_URL = "https://github.com/CaeliaEve/thaumcraft-nexus"
@@ -32,9 +33,12 @@ class ThaumNexusGui:
     # UI text markers: 读取当前笔记 / 读取并自动放置 / 轮椅模式 / 停止当前任务
 
     def __init__(self, project_root: Path | str | None = None) -> None:
-        self.project_root = Path(project_root) if project_root is not None else Path(__file__).resolve().parents[1]
-        self.kb = KnowledgeBase.load(self.project_root)
-        self.board_renderer = BoardImageRenderer(self.kb, project_root=self.project_root, hex_size=34, icon_size=24)
+        self.bridge_project_root = Path(project_root).resolve() if project_root is not None else None
+        self.project_root = app_root(self.bridge_project_root)
+        self.resource_root = resource_root(self.bridge_project_root)
+        self.runtime_root = runtime_root(self.bridge_project_root)
+        self.kb = KnowledgeBase.load(self.resource_root)
+        self.board_renderer = BoardImageRenderer(self.kb, project_root=self.resource_root, hex_size=34, icon_size=24)
 
         self.tk = None
         self.canvas = None
@@ -177,7 +181,7 @@ class ThaumNexusGui:
         footer = ttk.Frame(parent, style="Panel.TFrame")
         footer.pack(side="bottom", fill="x", padx=20, pady=(0, 18))
 
-        icon_path = self.project_root / GITHUB_ICON
+        icon_path = self.resource_root / GITHUB_ICON
         icon = ttk.Label(footer, image=self._load_github_icon(icon_path), style="Muted.TLabel", cursor="hand2")
         icon.pack(side="left")
 
@@ -204,7 +208,7 @@ class ThaumNexusGui:
         return f"{ACTION_LABELS[action]}  {shortcut}" if shortcut else ACTION_LABELS[action]
 
     def _settings_path(self) -> Path:
-        return self.project_root / "runtime" / "gui_settings.json"
+        return self.runtime_root / "gui_settings.json"
 
     def _load_shortcuts(self) -> dict[str, str]:
         shortcuts = dict(DEFAULT_SHORTCUTS)
@@ -368,7 +372,7 @@ class ThaumNexusGui:
             from .client_bridge import read_and_solve_current_note
 
             emit("log", "\u8bfb\u53d6\u5f53\u524d\u7814\u7a76\u53f0\u7b14\u8bb0\u2026\u2026")
-            result = read_and_solve_current_note(self.project_root)
+            result = read_and_solve_current_note(self.bridge_project_root)
             return {"kind": "read", "result": result}
 
         self._start_worker("\u8bfb\u53d6\u5f53\u524d\u7b14\u8bb0", task, cancellable=False)
@@ -382,7 +386,7 @@ class ThaumNexusGui:
             from .client_bridge import read_solve_and_apply_current_note
 
             emit("log", "\u8bfb\u53d6\u3001\u6c42\u89e3\u5e76\u81ea\u52a8\u653e\u7f6e\u5f53\u524d\u7b14\u8bb0\u2026\u2026")
-            result = read_solve_and_apply_current_note(self.project_root)
+            result = read_solve_and_apply_current_note(self.bridge_project_root)
             return {"kind": "apply", "result": result}
 
         self._start_worker("\u81ea\u52a8\u653e\u7f6e\u5f53\u524d\u7b14\u8bb0", task, cancellable=False)
@@ -400,7 +404,7 @@ class ThaumNexusGui:
 
             emit("log", "\u8f6e\u6905\u6a21\u5f0f\u542f\u52a8\uff1a\u5f00\u59cb\u626b\u63cf\u80cc\u5305\u672a\u89e3\u7b14\u8bb0\u3002")
             payload = solve_all_inventory_notes(
-                self.project_root,
+                self.bridge_project_root,
                 apply=True,
                 stop_event=stop_event,
                 progress_callback=progress,
@@ -549,7 +553,7 @@ class ThaumNexusGui:
 
     def _show_solution(self, *, board, solution, note_label: str, payload: dict[str, Any]) -> None:
         self.rendered = self.board_renderer.render(board, solution)
-        out_dir = self.project_root / "runtime"
+        out_dir = self.runtime_root
         out_dir.mkdir(parents=True, exist_ok=True)
         self.solution_image_path = out_dir / "current_solution.png"
         self.rendered.save(self.solution_image_path)
@@ -605,7 +609,7 @@ class ThaumNexusGui:
         return min(1.0, max_width / image.width, max_height / image.height)
 
     def _write_runtime_json(self, name: str, payload: dict[str, Any]) -> Path:
-        out_dir = self.project_root / "runtime"
+        out_dir = self.runtime_root
         out_dir.mkdir(parents=True, exist_ok=True)
         path = out_dir / name
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

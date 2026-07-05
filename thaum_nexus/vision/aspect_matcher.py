@@ -8,6 +8,7 @@ from pathlib import Path
 import statistics
 
 from thaum_nexus.knowledge_base import KnowledgeBase
+from thaum_nexus.paths import resource_path, resource_root
 
 
 try:  # Pillow is intentionally optional until the GUI/vision milestone.
@@ -49,10 +50,10 @@ class AspectMatcher:
     ) -> "AspectMatcher":
         if Image is None:
             raise RuntimeError("Pillow is required for AspectMatcher")
-        root = Path(project_root) if project_root is not None else Path(__file__).resolve().parents[2]
+        root = resource_root(project_root)
         templates: dict[str, object] = {}
         for key, aspect in kb.aspects.items():
-            icon_path = root / aspect.icon
+            icon_path = resource_path(aspect.icon, root)
             templates[key] = _prepare_image(icon_path, size)
         return cls(templates)
 

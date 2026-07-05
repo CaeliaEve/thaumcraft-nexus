@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .data_model import Aspect
+from .paths import data_dir
 
 
 class KnowledgeBase:
@@ -27,11 +28,10 @@ class KnowledgeBase:
 
     @classmethod
     def load(cls, project_root: Path | str | None = None) -> "KnowledgeBase":
-        root = Path(project_root) if project_root is not None else Path(__file__).resolve().parents[1]
-        data_dir = root / "data"
-        aspects_payload = _read_json(data_dir / "aspects.json")
-        combos_payload = _read_json(data_dir / "combinations.json")
-        adjacency_payload = _read_json(data_dir / "adjacency.json")
+        root_data_dir = data_dir(project_root)
+        aspects_payload = _read_json(root_data_dir / "aspects.json")
+        combos_payload = _read_json(root_data_dir / "combinations.json")
+        adjacency_payload = _read_json(root_data_dir / "adjacency.json")
 
         aspects = {
             key: Aspect.from_dict(payload)
@@ -105,4 +105,3 @@ class KnowledgeBase:
 
 def _read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
-

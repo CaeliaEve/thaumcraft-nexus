@@ -37,19 +37,19 @@ def main(argv: list[str] | None = None) -> int:
 
     solve_parser = subparsers.add_parser("solve", help="Solve a BoardState JSON file.")
     solve_parser.add_argument("board", type=Path, help="Path to board JSON")
-    solve_parser.add_argument("--project-root", type=Path, default=Path(__file__).resolve().parents[1])
+    solve_parser.add_argument("--project-root", type=Path, default=None)
     solve_parser.set_defaults(func=_solve_board_command)
 
     note_parser = subparsers.add_parser("solve-note", help="Solve a Thaumcraft research-note JSON/NBT export.")
     note_parser.add_argument("note", type=Path, help="Path to note JSON exported from the client")
-    note_parser.add_argument("--project-root", type=Path, default=Path(__file__).resolve().parents[1])
+    note_parser.add_argument("--project-root", type=Path, default=None)
     note_parser.set_defaults(func=_solve_note_command)
 
     current_parser = subparsers.add_parser(
         "read-current-note",
         help="Attach to the running Minecraft client, export the open Thaumcraft note, and solve it.",
     )
-    current_parser.add_argument("--project-root", type=Path, default=Path(__file__).resolve().parents[1])
+    current_parser.add_argument("--project-root", type=Path, default=None)
     current_parser.add_argument("--output", type=Path, default=Path("runtime/current_note.json"))
     current_parser.add_argument("--pid", help="Minecraft JVM pid. Omit to auto-detect.")
     current_parser.add_argument("--no-build", action="store_true", help="Do not rebuild java-agent before attaching.")
@@ -60,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
         "apply-current-note",
         help="Attach to Minecraft, solve the open Thaumcraft note, and send placement packets.",
     )
-    apply_parser.add_argument("--project-root", type=Path, default=Path(__file__).resolve().parents[1])
+    apply_parser.add_argument("--project-root", type=Path, default=None)
     apply_parser.add_argument("--note-output", type=Path, default=Path("runtime/current_note.json"))
     apply_parser.add_argument("--plan-output", type=Path, default=Path("runtime/apply_plan.json"))
     apply_parser.add_argument("--result-output", type=Path, default=Path("runtime/apply_result.json"))
@@ -75,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
         "inventory-notes",
         help="Attach to Minecraft and list unsolved Thaumcraft research notes in the open research-table container.",
     )
-    inventory_parser.add_argument("--project-root", type=Path, default=Path(__file__).resolve().parents[1])
+    inventory_parser.add_argument("--project-root", type=Path, default=None)
     inventory_parser.add_argument("--output", type=Path, default=Path("runtime/inventory_notes.json"))
     inventory_parser.add_argument("--pid", help="Minecraft JVM pid. Omit to auto-detect.")
     inventory_parser.add_argument("--no-build", action="store_true", help="Do not rebuild java-agent before attaching.")
@@ -87,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Move/swap one container slot into the research-table note slot.",
     )
     load_note_parser.add_argument("slot", type=int, help="Container slot from inventory-notes output")
-    load_note_parser.add_argument("--project-root", type=Path, default=Path(__file__).resolve().parents[1])
+    load_note_parser.add_argument("--project-root", type=Path, default=None)
     load_note_parser.add_argument("--result-output", type=Path, default=Path("runtime/load_note_result.json"))
     load_note_parser.add_argument("--pid", help="Minecraft JVM pid. Omit to auto-detect.")
     load_note_parser.add_argument("--no-build", action="store_true", help="Do not rebuild java-agent before attaching.")
@@ -98,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
         "wheelchair",
         help="Dry-run or apply batch solving for every unsolved research note in the open research table/inventory.",
     )
-    wheelchair_parser.add_argument("--project-root", type=Path, default=Path(__file__).resolve().parents[1])
+    wheelchair_parser.add_argument("--project-root", type=Path, default=None)
     wheelchair_parser.add_argument("--pid", help="Minecraft JVM pid. Omit to auto-detect.")
     wheelchair_parser.add_argument("--apply", action="store_true", help="Actually synthesize/place aspects and swap notes.")
     wheelchair_parser.add_argument("--max-notes", type=int, default=36)
@@ -110,7 +110,7 @@ def main(argv: list[str] | None = None) -> int:
 
     read_parser = subparsers.add_parser("read-screenshot", help="Read a BoardState from a screenshot image.")
     read_parser.add_argument("image", type=Path, help="Screenshot image path")
-    read_parser.add_argument("--project-root", type=Path, default=Path(__file__).resolve().parents[1])
+    read_parser.add_argument("--project-root", type=Path, default=None)
     read_parser.add_argument(
         "--calibration",
         type=Path,
