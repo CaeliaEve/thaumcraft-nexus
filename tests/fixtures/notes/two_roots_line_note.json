@@ -1,0 +1,11 @@
+{
+  "source": "client-nbt",
+  "researchKey": "TEST_NOTE",
+  "complete": false,
+  "copies": 0,
+  "hexgrid": [
+    {"hexq": 0, "hexr": 0, "type": 1, "aspect": "aer"},
+    {"hexq": 1, "hexr": 0, "type": 0},
+    {"hexq": 2, "hexr": 0, "type": 1, "aspect": "ignis"}
+  ]
+}

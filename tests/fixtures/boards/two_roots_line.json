@@ -1,0 +1,9 @@
+{
+  "name": "Aer and Ignis with one empty cell; should place Lux",
+  "cells": [
+    {"q": 0, "r": 0, "kind": "root", "aspect": "aer"},
+    {"q": 1, "r": 0, "kind": "empty"},
+    {"q": 2, "r": 0, "kind": "root", "aspect": "ignis"}
+  ]
+}
+

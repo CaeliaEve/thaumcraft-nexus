@@ -1,0 +1,24 @@
+# Python caches / tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local runtime output
+runtime/
+debug/
+screenshots/
+archive/
+*.log
+hs_err_pid*.log
+
+
+# Java build output
+java-agent/build/
+
+# Editor / OS noise
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store

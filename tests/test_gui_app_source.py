@@ -1,0 +1,65 @@
+import unittest
+from pathlib import Path
+
+
+GUI_SOURCE = Path(__file__).resolve().parents[1] / "thaum_nexus" / "gui_app.py"
+GITIGNORE = Path(__file__).resolve().parents[1] / ".gitignore"
+
+OBSOLETE_SCREENSHOT_UI_TEXT = [
+    "打开截图",
+    "截取当前屏幕",
+    "截取 Minecraft 窗口",
+    "重新校准",
+    "加载校准",
+    "保存校准",
+    "自动检测 ROOT/格子",
+    "备用流程：截图识别",
+]
+
+
+class GuiAppSourceTests(unittest.TestCase):
+    def test_gui_focuses_on_structured_note_workflow(self):
+        source = GUI_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("读取当前笔记", source)
+        self.assertIn("读取并自动放置", source)
+        for obsolete_label in OBSOLETE_SCREENSHOT_UI_TEXT:
+            self.assertNotIn(obsolete_label, source)
+
+    def test_gui_has_github_link_without_usage_steps_noise(self):
+        source = GUI_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("https://github.com/CaeliaEve/thaumcraft-nexus", source)
+        self.assertIn("icons8-github-50.png", source)
+        self.assertIn("_open_github", source)
+        self.assertIn("设置", source)
+        self.assertIn("_open_settings", source)
+        self.assertIn("_bind_shortcuts", source)
+        self.assertNotIn('text="GH"', source)
+        self.assertNotIn("使用步骤", source)
+        self.assertNotIn("游戏里打开研究台", source)
+        self.assertNotIn("打开游戏研究台后，点击", source)
+        self.assertNotIn("轮椅模式运行时界面不会再卡住", source)
+        self.assertNotIn("结构读取 · 自动求解 · 批量处理", source)
+
+    def test_gui_no_longer_imports_screenshot_vision_stack(self):
+        source = GUI_SOURCE.read_text(encoding="utf-8")
+
+        for obsolete_import in [
+            "PillowScreenshotSource",
+            "CalibrationProfile",
+            "BoardReader",
+            "AspectMatcher",
+            "HexPresenceDetector",
+            "locate_minecraft_window",
+        ]:
+            self.assertNotIn(obsolete_import, source)
+
+    def test_local_archive_is_not_published(self):
+        gitignore = GITIGNORE.read_text(encoding="utf-8")
+
+        self.assertIn("archive/", gitignore)
+
+
+if __name__ == "__main__":
+    unittest.main()
