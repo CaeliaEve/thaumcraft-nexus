@@ -129,6 +129,8 @@ public final class ThaumNexusAttacher {
         return value.contains("minecraft")
                 || value.contains("launchwrapper")
                 || value.contains("net.minecraft.launchwrapper.launch")
+                || value.contains("org.prismlauncher.entrypoint")
+                || value.contains("org.multimc.entrypoint")
                 || value.contains("forge")
                 || value.contains("gtnh")
                 || value.contains("gradlestart");

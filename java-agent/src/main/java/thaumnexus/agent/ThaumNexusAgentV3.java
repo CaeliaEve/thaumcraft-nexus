@@ -39,6 +39,14 @@ public final class ThaumNexusAgentV3 {
 
     public static void agentmain(String args, Instrumentation inst) {
         instrumentation = inst;
+        ClassLoader gameLoader = findGameClassLoader();
+        if (gameLoader != null) {
+            try {
+                Thread.currentThread().setContextClassLoader(gameLoader);
+            } catch (SecurityException ignored) {
+                // Continue with explicit loader selection in findClass().
+            }
+        }
         String rawArgs = args == null ? "" : args.trim();
         String mode = "export";
         String outputPath = rawArgs.isEmpty() ? "thaum_nexus_current_note.json" : rawArgs;
@@ -148,7 +156,26 @@ public final class ThaumNexusAgentV3 {
         Map<String, Integer> remainingAspects = new HashMap<String, Integer>();
         int combinesSent = 0;
         int combinesSkipped = 0;
+        int sent = 0;
+        int skipped = 0;
         for (SynthesisStep step : plan.combines) {
+            if (isCancelRequested(plan)) {
+                return applyResultJson(
+                        screen.getClass().getName(),
+                        x,
+                        y,
+                        z,
+                        plan.combines.size(),
+                        combinesSent,
+                        combinesSkipped,
+                        combineResults,
+                        plan.placements.size(),
+                        sent,
+                        skipped,
+                        results,
+                        "cancelled",
+                        "cancel requested before synthesis step");
+            }
             Object left = getAspectByTag(step.left);
             Object right = getAspectByTag(step.right);
             Object output = getAspectByTag(step.output);
@@ -176,14 +203,43 @@ public final class ThaumNexusAgentV3 {
             addAspectAmount(player, tile, output, remainingAspects);
             combinesSent++;
             combineResults.add(new SynthesisApplyResult(step, "sent", ""));
-            if (plan.delayMs > 0) {
-                Thread.sleep(plan.delayMs);
+            if (sleepCancelled(plan.delayMs, plan)) {
+                return applyResultJson(
+                        screen.getClass().getName(),
+                        x,
+                        y,
+                        z,
+                        plan.combines.size(),
+                        combinesSent,
+                        combinesSkipped,
+                        combineResults,
+                        plan.placements.size(),
+                        sent,
+                        skipped,
+                        results,
+                        "cancelled",
+                        "cancel requested after synthesis step");
             }
         }
 
-        int sent = 0;
-        int skipped = 0;
         for (Placement placement : plan.placements) {
+            if (isCancelRequested(plan)) {
+                return applyResultJson(
+                        screen.getClass().getName(),
+                        x,
+                        y,
+                        z,
+                        plan.combines.size(),
+                        combinesSent,
+                        combinesSkipped,
+                        combineResults,
+                        plan.placements.size(),
+                        sent,
+                        skipped,
+                        results,
+                        "cancelled",
+                        "cancel requested before placement step");
+            }
             PlacementApplyResult result = validatePlacementTarget(note, placement);
             if (!"pending".equals(result.status)) {
                 skipped++;
@@ -206,13 +262,41 @@ public final class ThaumNexusAgentV3 {
             consumeAspectAmount(aspect, remainingAspects);
             sent++;
             results.add(new PlacementApplyResult(placement, "sent", ""));
-            if (plan.delayMs > 0) {
-                Thread.sleep(plan.delayMs);
+            if (sleepCancelled(plan.delayMs, plan)) {
+                return applyResultJson(
+                        screen.getClass().getName(),
+                        x,
+                        y,
+                        z,
+                        plan.combines.size(),
+                        combinesSent,
+                        combinesSkipped,
+                        combineResults,
+                        plan.placements.size(),
+                        sent,
+                        skipped,
+                        results,
+                        "cancelled",
+                        "cancel requested after placement step");
             }
         }
 
-        if (plan.verifyDelayMs > 0) {
-            Thread.sleep(plan.verifyDelayMs);
+        if (sleepCancelled(plan.verifyDelayMs, plan)) {
+            return applyResultJson(
+                    screen.getClass().getName(),
+                    x,
+                    y,
+                    z,
+                    plan.combines.size(),
+                    combinesSent,
+                    combinesSkipped,
+                    combineResults,
+                    plan.placements.size(),
+                    sent,
+                    skipped,
+                    results,
+                    "cancelled",
+                    "cancel requested during verification delay");
         }
 
         return applyResultJson(
@@ -227,7 +311,9 @@ public final class ThaumNexusAgentV3 {
                 plan.placements.size(),
                 sent,
                 skipped,
-                results);
+                results,
+                "ok",
+                "");
     }
 
     private static String exportInventoryNotesJson() throws Exception {
@@ -1076,6 +1162,7 @@ public final class ThaumNexusAgentV3 {
         String text = readText(path);
         int delayMs = parseOptionalInt(text, "\"delayMs\"\\s*:\\s*(\\d+)", 120);
         int verifyDelayMs = parseOptionalInt(text, "\"verifyDelayMs\"\\s*:\\s*(\\d+)", 600);
+        String cancelFile = parseOptionalString(text, "\"cancelFile\"\\s*:\\s*\"((?:\\\\.|[^\"])*)\"");
         Pattern combinePattern = Pattern.compile(
                 "\\{\\s*\"output\"\\s*:\\s*\"((?:\\\\.|[^\"])*)\"\\s*,\\s*\"left\"\\s*:\\s*\"((?:\\\\.|[^\"])*)\"\\s*,\\s*\"right\"\\s*:\\s*\"((?:\\\\.|[^\"])*)\"\\s*\\}");
         Matcher combineMatcher = combinePattern.matcher(text);
@@ -1100,12 +1187,39 @@ public final class ThaumNexusAgentV3 {
         if (placements.isEmpty() && combines.isEmpty()) {
             throw new IllegalArgumentException("apply plan contains no placements or combines: " + path);
         }
-        return new ApplyPlan(combines, placements, delayMs, verifyDelayMs);
+        return new ApplyPlan(combines, placements, delayMs, verifyDelayMs, cancelFile);
     }
 
     private static int parseOptionalInt(String text, String regex, int fallback) {
         Matcher matcher = Pattern.compile(regex).matcher(text);
         return matcher.find() ? Integer.parseInt(matcher.group(1)) : fallback;
+    }
+
+    private static String parseOptionalString(String text, String regex) {
+        Matcher matcher = Pattern.compile(regex).matcher(text);
+        return matcher.find() ? unescapeJsonString(matcher.group(1)) : "";
+    }
+
+    private static boolean sleepCancelled(int delayMs, ApplyPlan plan) throws InterruptedException {
+        if (delayMs <= 0) {
+            return isCancelRequested(plan);
+        }
+        long deadline = System.currentTimeMillis() + delayMs;
+        while (System.currentTimeMillis() < deadline) {
+            if (isCancelRequested(plan)) {
+                return true;
+            }
+            long remaining = deadline - System.currentTimeMillis();
+            Thread.sleep(Math.max(1L, Math.min(50L, remaining)));
+        }
+        return isCancelRequested(plan);
+    }
+
+    private static boolean isCancelRequested(ApplyPlan plan) {
+        return plan != null
+                && plan.cancelFile != null
+                && plan.cancelFile.length() > 0
+                && new File(plan.cancelFile).exists();
     }
 
     private static String readText(String path) throws Exception {
@@ -1194,27 +1308,149 @@ public final class ThaumNexusAgentV3 {
     }
 
     private static Class<?> findClass(String name) throws ClassNotFoundException {
-        ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
-        if (contextLoader != null) {
-            try {
-                return Class.forName(name, false, contextLoader);
-            } catch (ClassNotFoundException ignored) {
+        Class<?>[] loadedClasses = loadedClasses();
+        List<ClassLoader> gameLoaders = candidateGameClassLoaders(loadedClasses);
+
+        Class<?> loadedGameClass = findLoadedClass(name, loadedClasses, gameLoaders, false);
+        if (loadedGameClass != null) {
+            return loadedGameClass;
+        }
+        for (ClassLoader loader : gameLoaders) {
+            Class<?> loaded = tryLoadClass(name, loader);
+            if (loaded != null) {
+                return loaded;
             }
         }
-        try {
-            return Class.forName(name);
-        } catch (ClassNotFoundException ignored) {
+
+        Class<?> anyLoadedClass = findLoadedClass(name, loadedClasses, gameLoaders, true);
+        if (anyLoadedClass != null) {
+            return anyLoadedClass;
         }
+
+        ClassLoader contextLoader = Thread.currentThread().getContextClassLoader();
+        Class<?> contextClass = tryLoadClass(name, contextLoader);
+        if (contextClass != null) {
+            return contextClass;
+        }
+
+        ClassLoader agentLoader = ThaumNexusAgentV3.class.getClassLoader();
+        Class<?> agentClass = tryLoadClass(name, agentLoader);
+        if (agentClass != null) {
+            return agentClass;
+        }
+
+        Class<?> systemClass = tryLoadClass(name, ClassLoader.getSystemClassLoader());
+        if (systemClass != null) {
+            return systemClass;
+        }
+
+        Class<?> bootstrapClass = tryLoadClass(name, null);
+        if (bootstrapClass != null) {
+            return bootstrapClass;
+        }
+
+        throw new ClassNotFoundException(name);
+    }
+
+    private static Class<?> tryLoadClass(String name, ClassLoader loader) {
+        try {
+            return Class.forName(name, false, loader);
+        } catch (ClassNotFoundException ignored) {
+            return null;
+        } catch (LinkageError ignored) {
+            return null;
+        } catch (SecurityException ignored) {
+            return null;
+        }
+    }
+
+    private static Class<?>[] loadedClasses() {
         Instrumentation inst = instrumentation;
         if (inst != null) {
-            Class<?>[] classes = inst.getAllLoadedClasses();
-            for (Class<?> candidate : classes) {
-                if (name.equals(candidate.getName())) {
+            return inst.getAllLoadedClasses();
+        }
+        return new Class<?>[0];
+    }
+
+    private static ClassLoader findGameClassLoader() {
+        List<ClassLoader> loaders = candidateGameClassLoaders(loadedClasses());
+        return loaders.isEmpty() ? null : loaders.get(0);
+    }
+
+    private static List<ClassLoader> candidateGameClassLoaders(Class<?>[] loadedClasses) {
+        LinkedHashSet<ClassLoader> loaders = new LinkedHashSet<ClassLoader>();
+        String[] anchors = new String[]{
+                "net.minecraft.client.Minecraft",
+                "net.minecraft.util.ResourceLocation",
+                "cpw.mods.fml.common.Loader",
+                "net.minecraft.launchwrapper.Launch",
+                "thaumcraft.common.Thaumcraft",
+                "thaumcraft.api.aspects.Aspect"
+        };
+        for (String anchor : anchors) {
+            addLoadedClassLoader(loaders, loadedClasses, anchor);
+        }
+        for (Class<?> candidate : loadedClasses) {
+            if (isGameClassName(candidate.getName())) {
+                addClassLoader(loaders, candidate.getClassLoader());
+            }
+        }
+        return new ArrayList<ClassLoader>(loaders);
+    }
+
+    private static void addLoadedClassLoader(Set<ClassLoader> loaders, Class<?>[] loadedClasses, String name) {
+        for (Class<?> candidate : loadedClasses) {
+            if (name.equals(candidate.getName())) {
+                addClassLoader(loaders, candidate.getClassLoader());
+            }
+        }
+    }
+
+    private static void addClassLoader(Set<ClassLoader> loaders, ClassLoader loader) {
+        if (loader != null) {
+            loaders.add(loader);
+        }
+    }
+
+    private static Class<?> findLoadedClass(
+            String name,
+            Class<?>[] loadedClasses,
+            List<ClassLoader> preferredLoaders,
+            boolean allowAny
+    ) {
+        for (ClassLoader loader : preferredLoaders) {
+            for (Class<?> candidate : loadedClasses) {
+                if (name.equals(candidate.getName()) && candidate.getClassLoader() == loader) {
                     return candidate;
                 }
             }
         }
-        throw new ClassNotFoundException(name);
+        if (!allowAny) {
+            return null;
+        }
+        ClassLoader agentLoader = ThaumNexusAgentV3.class.getClassLoader();
+        Class<?> fallback = null;
+        for (Class<?> candidate : loadedClasses) {
+            if (!name.equals(candidate.getName())) {
+                continue;
+            }
+            if (fallback == null) {
+                fallback = candidate;
+            }
+            if (candidate.getClassLoader() != agentLoader || !isGameClassName(name)) {
+                return candidate;
+            }
+        }
+        return fallback;
+    }
+
+    private static boolean isGameClassName(String name) {
+        return name.startsWith("net.minecraft.")
+                || name.startsWith("thaumcraft.")
+                || name.startsWith("cpw.mods.")
+                || name.startsWith("net.minecraftforge.")
+                || name.startsWith("gregtech.")
+                || name.startsWith("com.gtnewhorizons.");
     }
 
     private static Object readFieldByNames(Object target, String... names) throws Exception {
@@ -1453,13 +1689,18 @@ public final class ThaumNexusAgentV3 {
             int requested,
             int sent,
             int skipped,
-            List<PlacementApplyResult> results
+            List<PlacementApplyResult> results,
+            String status,
+            String message
     ) {
         StringBuilder out = new StringBuilder();
         out.append("{\n");
         appendField(out, "source", "client-nbt", true);
-        appendField(out, "status", "ok", true);
+        appendField(out, "status", status == null || status.length() == 0 ? "ok" : status, true);
         appendField(out, "action", "apply-synthesis-and-placements", true);
+        if (message != null && message.length() > 0) {
+            appendField(out, "message", message, true);
+        }
         appendField(out, "screenClass", screenClass, true);
         out.append("  \"tile\": {\"x\": ").append(x).append(", \"y\": ").append(y).append(", \"z\": ").append(z).append("},\n");
         appendNumberField(out, "combinesRequested", combinesRequested, true);
@@ -1565,12 +1806,14 @@ public final class ThaumNexusAgentV3 {
         final List<Placement> placements;
         final int delayMs;
         final int verifyDelayMs;
+        final String cancelFile;
 
-        ApplyPlan(List<SynthesisStep> combines, List<Placement> placements, int delayMs, int verifyDelayMs) {
+        ApplyPlan(List<SynthesisStep> combines, List<Placement> placements, int delayMs, int verifyDelayMs, String cancelFile) {
             this.combines = combines;
             this.placements = placements;
             this.delayMs = delayMs;
             this.verifyDelayMs = verifyDelayMs;
+            this.cancelFile = cancelFile;
         }
     }
 

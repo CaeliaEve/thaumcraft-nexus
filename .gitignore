@@ -10,10 +10,32 @@ dist/
 # Local runtime output
 runtime/
 debug/
-screenshots/
 archive/
 *.log
 hs_err_pid*.log
+jdk/
+jdk8/
+jdk17/
+jdk18/
+jdk19/
+jdk20/
+jdk21/
+jdk22/
+jdk23/
+jdk24/
+jdk25/
+java/
+java8/
+java17/
+java18/
+java19/
+java20/
+java21/
+java22/
+java23/
+java24/
+java25/
+portable-jdk/
 
 
 # Java build output

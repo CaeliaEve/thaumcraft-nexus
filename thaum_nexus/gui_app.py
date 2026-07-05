@@ -52,6 +52,10 @@ class ThaumNexusGui:
         self.stop_button = None
         self.shortcut_bindings: list[str] = []
         self.shortcuts = self._load_shortcuts()
+        # A JVM PID is process-lifetime state: it changes every time the game restarts.
+        # Keep manual PID selection for the current GUI session only, and never
+        # resurrect a stale PID from gui_settings.json.
+        self.target_pid = ""
 
         self.photo = None
         self.github_icon_photo = None
@@ -210,15 +214,19 @@ class ThaumNexusGui:
     def _settings_path(self) -> Path:
         return self.runtime_root / "gui_settings.json"
 
-    def _load_shortcuts(self) -> dict[str, str]:
-        shortcuts = dict(DEFAULT_SHORTCUTS)
+    def _load_settings_payload(self) -> dict[str, Any]:
         path = self._settings_path()
         if not path.exists():
-            return shortcuts
+            return {}
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
         except Exception:
-            return shortcuts
+            return {}
+        return payload if isinstance(payload, dict) else {}
+
+    def _load_shortcuts(self) -> dict[str, str]:
+        shortcuts = dict(DEFAULT_SHORTCUTS)
+        payload = self._load_settings_payload()
         saved = payload.get("shortcuts") if isinstance(payload, dict) else None
         if not isinstance(saved, dict):
             return shortcuts
@@ -228,14 +236,27 @@ class ThaumNexusGui:
                 shortcuts[action] = value
         return shortcuts
 
-    def _save_shortcuts(self) -> None:
+    def _load_target_pid(self) -> str:
+        payload = self._load_settings_payload()
+        value = payload.get("targetPid")
+        return value.strip() if isinstance(value, str) else ""
+
+    def _save_settings(self) -> None:
         path = self._settings_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "schema": "thaumcraft-nexus/gui-settings/v1",
             "shortcuts": {action: self.shortcuts[action] for action in ACTION_ORDER},
+            "targetPid": "",
         }
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    def _save_shortcuts(self) -> None:
+        self._save_settings()
+
+    def _bridge_pid(self) -> str | None:
+        pid = self.target_pid.strip()
+        return pid or None
 
     def _bind_shortcuts(self) -> None:
         if self.tk is None:
@@ -322,9 +343,83 @@ class ThaumNexusGui:
             ).grid(row=row, column=2, sticky="e", pady=5)
             row += 1
 
+
+        target_pid_var = tk.StringVar(value=self.target_pid)
+        process_var = tk.StringVar()
+        row += 1
+        ttk.Label(container, text="\u76ee\u6807 JVM \u8fdb\u7a0b\uff08\u4ec5\u672c\u6b21\u8fd0\u884c\uff09", style="Title.TLabel").grid(
+            row=row,
+            column=0,
+            columnspan=3,
+            sticky="w",
+            pady=(12, 8),
+        )
+        row += 1
+        ttk.Label(
+            container,
+            text="\u7559\u7a7a\u4e3a\u81ea\u52a8\u68c0\u6d4b\uff1bPID \u4f1a\u5728\u6e38\u620f\u91cd\u542f\u540e\u53d8\u5316\uff0c\u624b\u52a8\u9009\u62e9\u4ec5\u5bf9\u672c\u6b21\u8fd0\u884c\u751f\u6548\u3002",
+            style="Muted.TLabel",
+        ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        row += 1
+        ttk.Label(container, text="PID", style="Muted.TLabel").grid(row=row, column=0, sticky="w", pady=5)
+        ttk.Entry(container, textvariable=target_pid_var, width=18).grid(row=row, column=1, sticky="w", padx=(16, 12), pady=5)
+        ttk.Button(container, text="\u6e05\u7a7a", command=lambda: target_pid_var.set("")).grid(row=row, column=2, sticky="e", pady=5)
+        row += 1
+        process_combo = ttk.Combobox(container, textvariable=process_var, width=58, state="readonly")
+        process_combo.grid(row=row, column=0, columnspan=2, sticky="we", pady=5)
+
+        def apply_selected_process() -> None:
+            selected = process_var.get().strip()
+            if not selected:
+                return
+            target_pid_var.set(selected.split(maxsplit=1)[0])
+
+        def refresh_processes() -> None:
+            from .client_bridge import list_java_processes
+
+            processes = list_java_processes()
+            values = [process.label for process in processes]
+            process_combo.configure(values=values)
+            if values:
+                process_var.set(values[0])
+                hint.set(f"\u5df2\u627e\u5230 {len(values)} \u4e2a JVM\uff0c\u9009\u4e2d\u540e\u70b9\u51fb\u201c\u4f7f\u7528\u9009\u4e2d\u201d\u3002")
+            else:
+                process_var.set("")
+                hint.set("\u6ca1\u6709\u627e\u5230\u53ef\u89c1 JVM\uff1b\u8bf7\u786e\u8ba4\u6e38\u620f\u5df2\u542f\u52a8\uff0c\u6216\u624b\u52a8\u8f93\u5165 PID\u3002")
+
+        ttk.Button(container, text="\u5237\u65b0 JVM", command=refresh_processes).grid(row=row, column=2, sticky="e", pady=5)
+        row += 1
+        ttk.Button(container, text="\u4f7f\u7528\u9009\u4e2d", command=apply_selected_process).grid(row=row, column=2, sticky="e", pady=5)
+        process_combo.bind("<<ComboboxSelected>>", lambda _event: apply_selected_process())
+        row += 1
+
+        def save_settings() -> bool:
+            target = target_pid_var.get().strip()
+            if target and not target.isdigit():
+                hint.set("PID \u53ea\u80fd\u662f\u6570\u5b57\uff1b\u7559\u7a7a\u8868\u793a\u81ea\u52a8\u68c0\u6d4b\u3002")
+                return False
+            self.target_pid = target
+            self._save_settings()
+            hint.set(
+                f"\u5df2\u4fdd\u5b58\u76ee\u6807 JVM\uff1a{self.target_pid}"
+                if self.target_pid
+                else "\u5df2\u4fdd\u5b58\uff1a\u76ee\u6807 JVM \u4f7f\u7528\u81ea\u52a8\u68c0\u6d4b\u3002"
+            )
+            self._append_log(
+                f"\u76ee\u6807 JVM PID\uff1a{self.target_pid}"
+                if self.target_pid
+                else "\u76ee\u6807 JVM PID\uff1a\u81ea\u52a8\u68c0\u6d4b"
+            )
+            return True
+
+        def save_and_close() -> None:
+            if save_settings():
+                dialog.destroy()
+
         buttons = ttk.Frame(container, style="Panel.TFrame")
         buttons.grid(row=row, column=0, columnspan=3, sticky="e", pady=(14, 0))
         ttk.Button(buttons, text="恢复默认", command=lambda: self._reset_shortcuts(value_vars, hint)).pack(side="left", padx=(0, 8))
+        ttk.Button(buttons, text="\u4fdd\u5b58\u5e76\u5173\u95ed", command=save_and_close).pack(side="left", padx=(0, 8))
         ttk.Button(buttons, text="关闭", command=dialog.destroy).pack(side="left")
 
         dialog.bind("<Escape>", lambda _event: dialog.destroy())
@@ -368,28 +463,34 @@ class ThaumNexusGui:
             self._set_status("\u5df2\u6709\u4efb\u52a1\u5728\u8fd0\u884c\uff0c\u8bf7\u5148\u7b49\u5f85\u6216\u505c\u6b62\u5f53\u524d\u4efb\u52a1\u3002")
             return
 
-        def task(_stop_event: threading.Event, emit: Callable[[str, Any], None]) -> dict[str, Any]:
+        def task(stop_event: threading.Event, emit: Callable[[str, Any], None]) -> dict[str, Any]:
             from .client_bridge import read_and_solve_current_note
 
             emit("log", "\u8bfb\u53d6\u5f53\u524d\u7814\u7a76\u53f0\u7b14\u8bb0\u2026\u2026")
-            result = read_and_solve_current_note(self.bridge_project_root)
+            pid = self._bridge_pid()
+            if pid:
+                emit("log", f"\u4f7f\u7528\u76ee\u6807 JVM PID\uff1a{pid}")
+            result = read_and_solve_current_note(self.bridge_project_root, pid=pid, stop_event=stop_event)
             return {"kind": "read", "result": result}
 
-        self._start_worker("\u8bfb\u53d6\u5f53\u524d\u7b14\u8bb0", task, cancellable=False)
+        self._start_worker("\u8bfb\u53d6\u5f53\u524d\u7b14\u8bb0", task, cancellable=True)
 
     def _read_and_apply_current_note(self) -> None:
         if self.busy:
             self._set_status("\u5df2\u6709\u4efb\u52a1\u5728\u8fd0\u884c\uff0c\u8bf7\u5148\u7b49\u5f85\u6216\u505c\u6b62\u5f53\u524d\u4efb\u52a1\u3002")
             return
 
-        def task(_stop_event: threading.Event, emit: Callable[[str, Any], None]) -> dict[str, Any]:
+        def task(stop_event: threading.Event, emit: Callable[[str, Any], None]) -> dict[str, Any]:
             from .client_bridge import read_solve_and_apply_current_note
 
             emit("log", "\u8bfb\u53d6\u3001\u6c42\u89e3\u5e76\u81ea\u52a8\u653e\u7f6e\u5f53\u524d\u7b14\u8bb0\u2026\u2026")
-            result = read_solve_and_apply_current_note(self.bridge_project_root)
+            pid = self._bridge_pid()
+            if pid:
+                emit("log", f"\u4f7f\u7528\u76ee\u6807 JVM PID\uff1a{pid}")
+            result = read_solve_and_apply_current_note(self.bridge_project_root, pid=pid, stop_event=stop_event)
             return {"kind": "apply", "result": result}
 
-        self._start_worker("\u81ea\u52a8\u653e\u7f6e\u5f53\u524d\u7b14\u8bb0", task, cancellable=False)
+        self._start_worker("\u81ea\u52a8\u653e\u7f6e\u5f53\u524d\u7b14\u8bb0", task, cancellable=True)
 
     def _wheelchair_apply_notes(self) -> None:
         if self.busy:
@@ -403,8 +504,12 @@ class ThaumNexusGui:
                 emit("log", str(payload.get("message") or payload.get("event") or "\u8f6e\u6905\u6a21\u5f0f\u8fdb\u5ea6\u66f4\u65b0"))
 
             emit("log", "\u8f6e\u6905\u6a21\u5f0f\u542f\u52a8\uff1a\u5f00\u59cb\u626b\u63cf\u80cc\u5305\u672a\u89e3\u7b14\u8bb0\u3002")
+            pid = self._bridge_pid()
+            if pid:
+                emit("log", f"\u4f7f\u7528\u76ee\u6807 JVM PID\uff1a{pid}")
             payload = solve_all_inventory_notes(
                 self.bridge_project_root,
+                pid=pid,
                 apply=True,
                 stop_event=stop_event,
                 progress_callback=progress,
@@ -506,25 +611,27 @@ class ThaumNexusGui:
             self._finish_worker_ui()
 
     def _handle_worker_error(self, exc: Exception) -> None:
-        self._write_runtime_json(
-            "wheelchair_result.json",
-            {
-                "source": "thaum-nexus-gui",
-                "status": "error",
-                "action": "gui-worker",
-                "error": str(exc),
-            },
-        )
+        from .client_bridge import OperationCancelled
+
+        if isinstance(exc, OperationCancelled):
+            self._set_status("\u4efb\u52a1\u5df2\u505c\u6b62\u3002")
+            self._append_log("\u4efb\u52a1\u5df2\u505c\u6b62\u3002")
+            self._finish_worker_ui()
+            return
+
+        error_text, error_json = self._write_error_report(exc)
         self._set_status(f"\u4efb\u52a1\u5931\u8d25\uff1a{self._short_error(exc)}")
         self._append_log(f"\u5931\u8d25\uff1a{self._short_error(exc)}")
+        self._append_log(f"\u5b8c\u6574\u9519\u8bef\u5df2\u5199\u5165\uff1a{error_text}")
+        self._append_log(f"\u8bca\u65ad JSON\uff1a{error_json}")
         self._finish_worker_ui()
 
     def _stop_current_task(self) -> None:
         if not self.busy or self.stop_event is None:
             return
         self.stop_event.set()
-        self._set_status("\u6b63\u5728\u505c\u6b62\u2026\u2026\u4f1a\u5728\u5f53\u524d\u8bfb\u53d6/\u653e\u7f6e\u6b65\u9aa4\u5b8c\u6210\u540e\u9000\u51fa\u3002")
-        self._append_log("\u5df2\u8bf7\u6c42\u505c\u6b62\u3002")
+        self._set_status("\u6b63\u5728\u7acb\u5373\u505c\u6b62\u2026\u2026")
+        self._append_log("\u5df2\u53d1\u9001\u7acb\u5373\u505c\u6b62\u8bf7\u6c42\u3002")
         if self.stop_button is not None:
             self.stop_button.configure(state="disabled")
 
@@ -614,6 +721,20 @@ class ThaumNexusGui:
         path = out_dir / name
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         return path
+
+    def _write_error_report(self, exc: Exception) -> tuple[Path, Path]:
+        payload = {
+            "source": "thaum-nexus-gui",
+            "status": "error",
+            "action": "gui-worker",
+            "errorType": type(exc).__name__,
+            "error": str(exc),
+        }
+        error_json = self._write_runtime_json("gui_last_error.json", payload)
+        error_text = self.runtime_root / "gui_last_error.txt"
+        error_text.parent.mkdir(parents=True, exist_ok=True)
+        error_text.write_text(str(exc).strip() + "\n", encoding="utf-8")
+        return error_text, error_json
 
     def _set_status(self, text: str) -> None:
         if self.status is not None:

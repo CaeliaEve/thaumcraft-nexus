@@ -42,6 +42,25 @@ class GuiAppSourceTests(unittest.TestCase):
         self.assertNotIn("轮椅模式运行时界面不会再卡住", source)
         self.assertNotIn("结构读取 · 自动求解 · 批量处理", source)
 
+    def test_gui_exposes_manual_jvm_pid_setting(self):
+        source = GUI_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("targetPid", source)
+        self.assertIn("_bridge_pid", source)
+        self.assertIn("list_java_processes", source)
+        self.assertIn("pid=pid", source)
+        self.assertIn("stale PID", source)
+        self.assertIn("targetPid\": """, source)
+
+    def test_gui_stop_button_cancels_all_worker_actions(self):
+        source = GUI_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("OperationCancelled", source)
+        self.assertIn("read_and_solve_current_note(self.bridge_project_root, pid=pid, stop_event=stop_event)", source)
+        self.assertIn("read_solve_and_apply_current_note(self.bridge_project_root, pid=pid, stop_event=stop_event)", source)
+        self.assertIn('self._start_worker("\\u8bfb\\u53d6\\u5f53\\u524d\\u7b14\\u8bb0", task, cancellable=True)', source)
+        self.assertIn('self._start_worker("\\u81ea\\u52a8\\u653e\\u7f6e\\u5f53\\u524d\\u7b14\\u8bb0", task, cancellable=True)', source)
+
     def test_gui_no_longer_imports_screenshot_vision_stack(self):
         source = GUI_SOURCE.read_text(encoding="utf-8")
 

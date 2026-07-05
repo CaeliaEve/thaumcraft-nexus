@@ -43,7 +43,7 @@ def resource_root(project_root: Path | str | None = None) -> Path:
 
 
 def runtime_root(project_root: Path | str | None = None) -> Path:
-    """Directory for generated JSON, screenshots and GUI settings."""
+    """Directory for generated JSON, preview images and GUI settings."""
 
     return app_root(project_root) / "runtime"
 

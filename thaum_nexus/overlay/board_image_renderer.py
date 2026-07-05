@@ -7,7 +7,11 @@ from pathlib import Path
 from thaum_nexus.data_model import BoardState, CellKind, HexCoord, Solution
 from thaum_nexus.knowledge_base import KnowledgeBase
 from thaum_nexus.paths import resource_path, resource_root
-from thaum_nexus.vision.aspect_matcher import Image
+
+try:
+    from PIL import Image
+except ImportError:  # pragma: no cover - exercised only without optional runtime dependency.
+    Image = None  # type: ignore[assignment]
 
 
 @dataclass(frozen=True)

@@ -22,6 +22,16 @@ class SearchConfig:
     zero_inventory_penalty: float = 4.0
 
 
+@dataclass(frozen=True)
+class _PathSearchContext:
+    aspect_by_coord: dict[HexCoord, str]
+    empty_coords: set[HexCoord]
+    neighbors_by_coord: dict[HexCoord, tuple[HexCoord, ...]]
+    connectable_by_aspect: dict[str, frozenset[str]]
+    direct_candidates_by_aspect: dict[str, tuple[tuple[str, bool], ...]]
+    placement_cost_by_aspect: dict[str, float]
+
+
 def solve(board: BoardState, kb: KnowledgeBase, config: SearchConfig | None = None) -> Solution:
     """Connect all ROOT cells by placing aspects into empty cells."""
 
@@ -46,16 +56,16 @@ def solve(board: BoardState, kb: KnowledgeBase, config: SearchConfig | None = No
             return solution
 
         best: ConnectionPath | None = None
+        search_context = _build_path_search_context(board, kb, placements, config)
         sorted_ids = sorted(root_ids)
         for i, left_id in enumerate(sorted_ids):
             for right_id in sorted_ids[i + 1 :]:
-                candidate = find_connection_path(
+                candidate = _find_connection_path(
                     board=board,
-                    kb=kb,
                     start_coords=components[left_id],
                     goal_coords=components[right_id],
                     placements=placements,
-                    config=config,
+                    context=search_context,
                 )
                 if candidate is None:
                     continue
@@ -94,20 +104,82 @@ def find_connection_path(
     """Dijkstra search over combined board coordinate + aspect states."""
 
     config = config or SearchConfig()
-    starts = sorted(coord for coord in start_coords if board.aspect_at(coord, placements))
+    return _find_connection_path(
+        board=board,
+        start_coords=start_coords,
+        goal_coords=goal_coords,
+        placements=placements,
+        context=_build_path_search_context(board, kb, placements, config),
+    )
+
+
+def _build_path_search_context(
+    board: BoardState,
+    kb: KnowledgeBase,
+    placements: dict[HexCoord, str],
+    config: SearchConfig,
+) -> _PathSearchContext:
+    cells = board.cells
+    placement_aspects = placements
+    aspect_by_coord: dict[HexCoord, str] = {}
+    empty_coords: set[HexCoord] = set()
+    for coord, cell in cells.items():
+        placed = placement_aspects.get(coord)
+        if placed is not None:
+            aspect_by_coord[coord] = placed
+        elif cell.aspect is not None:
+            aspect_by_coord[coord] = cell.aspect
+        if cell.kind is CellKind.EMPTY and placed is None:
+            empty_coords.add(coord)
+
+    neighbors_by_coord = {
+        coord: tuple(neighbor for neighbor in hex_neighbors(coord) if neighbor in cells)
+        for coord in cells
+    }
+    connectable_by_aspect = {
+        aspect: frozenset(neighbors)
+        for aspect, neighbors in kb.neighbors.items()
+    }
+    direct_candidates_by_aspect = {
+        aspect: tuple((neighbor, True) for neighbor in neighbors)
+        for aspect, neighbors in kb.neighbors.items()
+    }
+
+    return _PathSearchContext(
+        aspect_by_coord=aspect_by_coord,
+        empty_coords=empty_coords,
+        neighbors_by_coord=neighbors_by_coord,
+        connectable_by_aspect=connectable_by_aspect,
+        direct_candidates_by_aspect=direct_candidates_by_aspect,
+        placement_cost_by_aspect=_placement_cost_cache(kb, placements, config),
+    )
+
+
+def _find_connection_path(
+    board: BoardState,
+    start_coords: set[HexCoord],
+    goal_coords: set[HexCoord],
+    placements: dict[HexCoord, str],
+    context: _PathSearchContext,
+) -> ConnectionPath | None:
+    aspect_by_coord = context.aspect_by_coord
+    starts = sorted(coord for coord in start_coords if coord in aspect_by_coord)
     goals = set(goal_coords)
     if not starts or not goals:
         return None
 
+    empty_coords = context.empty_coords
+    neighbors_by_coord = context.neighbors_by_coord
+    connectable_by_aspect = context.connectable_by_aspect
+    direct_candidates_by_aspect = context.direct_candidates_by_aspect
+    placement_cost_by_aspect = context.placement_cost_by_aspect
     sequence = count()
     heap: list[tuple[float, int, int, HexCoord, str]] = []
     dist: dict[tuple[HexCoord, str], float] = {}
     parent: dict[tuple[HexCoord, str], tuple[HexCoord, str] | None] = {}
 
     for coord in starts:
-        aspect = board.aspect_at(coord, placements)
-        if aspect is None:
-            continue
+        aspect = aspect_by_coord[coord]
         key = (coord, aspect)
         dist[key] = 0.0
         parent[key] = None
@@ -121,18 +193,20 @@ def find_connection_path(
         if coord in goals:
             return _reconstruct_path(board, key, parent, dist[key], placements)
 
-        for neighbor in hex_neighbors(coord):
-            cell = board.cell_at(neighbor)
-            if cell is None or cell.kind is CellKind.MISSING:
-                continue
-            for next_aspect, placing_new in _candidate_aspects(board, kb, neighbor, aspect, placements):
-                if not kb.can_connect(aspect, next_aspect):
+        for neighbor in neighbors_by_coord.get(coord, ()):
+            existing = aspect_by_coord.get(neighbor)
+            connectable = connectable_by_aspect[aspect]
+            if existing is not None:
+                if existing not in connectable:
                     continue
-                step_cost = (
-                    _placement_cost(kb, next_aspect, placements, config)
-                    if placing_new
-                    else 0.0
-                )
+                candidates = ((existing, False),)
+            elif neighbor in empty_coords:
+                candidates = direct_candidates_by_aspect[aspect]
+            else:
+                continue
+
+            for next_aspect, placing_new in candidates:
+                step_cost = placement_cost_by_aspect[next_aspect] if placing_new else 0.0
                 next_key = (neighbor, next_aspect)
                 next_cost = cost + step_cost
                 if next_cost < dist.get(next_key, float("inf")):
@@ -141,6 +215,30 @@ def find_connection_path(
                     heapq.heappush(heap, (next_cost, steps + 1, next(sequence), neighbor, next_aspect))
 
     return None
+
+
+def _placement_cost_cache(
+    kb: KnowledgeBase,
+    placements: dict[HexCoord, str],
+    config: SearchConfig,
+) -> dict[str, float]:
+    if config.aspect_inventory is None:
+        return {aspect: kb.placement_cost(aspect) for aspect in kb.aspects}
+
+    reserved: dict[str, int] = {}
+    for placed_aspect in placements.values():
+        reserved[placed_aspect] = reserved.get(placed_aspect, 0) + 1
+
+    return {
+        aspect: resource_aware_placement_cost(
+            kb,
+            aspect,
+            config.aspect_inventory,
+            reserved,
+            zero_inventory_penalty=config.zero_inventory_penalty,
+        )
+        for aspect in kb.aspects
+    }
 
 
 def validate_solution(board: BoardState, kb: KnowledgeBase, solution: Solution) -> None:
@@ -157,44 +255,6 @@ def validate_solution(board: BoardState, kb: KnowledgeBase, solution: Solution) 
     root_ids = root_component_ids(board, coord_to_component)
     if len(root_ids) != 1:
         raise ValueError(f"solution does not connect all roots; root components={sorted(root_ids)}")
-
-
-def _candidate_aspects(
-    board: BoardState,
-    kb: KnowledgeBase,
-    coord: HexCoord,
-    current_aspect: str,
-    placements: dict[HexCoord, str],
-) -> tuple[tuple[str, bool], ...]:
-    existing = board.aspect_at(coord, placements)
-    if existing is not None:
-        return ((existing, False),)
-
-    cell = board.cell_at(coord)
-    if cell is None or not cell.is_empty:
-        return ()
-
-    return tuple((aspect, True) for aspect in kb.direct_neighbors(current_aspect))
-
-
-def _placement_cost(
-    kb: KnowledgeBase,
-    aspect: str,
-    placements: dict[HexCoord, str],
-    config: SearchConfig,
-) -> float:
-    if config.aspect_inventory is None:
-        return kb.placement_cost(aspect)
-    reserved: dict[str, int] = {}
-    for placed_aspect in placements.values():
-        reserved[placed_aspect] = reserved.get(placed_aspect, 0) + 1
-    return resource_aware_placement_cost(
-        kb,
-        aspect,
-        config.aspect_inventory,
-        reserved,
-        zero_inventory_penalty=config.zero_inventory_penalty,
-    )
 
 
 def _reconstruct_path(

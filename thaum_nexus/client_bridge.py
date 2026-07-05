@@ -4,6 +4,7 @@ import json
 import os
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -14,6 +15,10 @@ from .note_io import ResearchNote
 from .paths import app_root, is_frozen, resource_root, runtime_root
 from .resources import ResourcePlan, plan_resource_usage
 from .solver import SearchConfig, solve
+
+
+class OperationCancelled(RuntimeError):
+    """Raised when a GUI/user cancellation request stops an in-flight operation."""
 
 
 @dataclass(frozen=True)
@@ -67,6 +72,31 @@ class ApplyResult:
         return payload
 
 
+@dataclass(frozen=True)
+class JavaProcess:
+    pid: str
+    display_name: str
+    java_path: str = ""
+    command_line: str = ""
+
+    @property
+    def label(self) -> str:
+        return f"{self.pid}  {self.display_name}".rstrip()
+
+    @property
+    def search_text(self) -> str:
+        return f"{self.display_name} {self.command_line} {self.java_path}".lower()
+
+
+@dataclass(frozen=True)
+class JavaRuntime:
+    java: str
+    java_home: Path | None = None
+    major: int | None = None
+    tools_jar: Path | None = None
+    source: str = "default"
+
+
 def export_current_note(
     project_root: Path | str | None = None,
     *,
@@ -74,6 +104,7 @@ def export_current_note(
     pid: str | int | None = None,
     build_if_needed: bool = True,
     timeout: float = 20.0,
+    stop_event: Any | None = None,
 ) -> tuple[dict[str, Any], Path, str, str]:
     """Attach to the running Minecraft client and export current research-note JSON."""
 
@@ -94,7 +125,10 @@ def export_current_note(
         pid=pid,
         build_if_needed=build_if_needed,
         timeout=timeout,
+        stop_event=stop_event,
     )
+    if _is_cancelled(stop_event):
+        raise OperationCancelled("operation cancelled after note export")
     if not output.exists():
         raise RuntimeError(
             "Java agent attach finished but did not create note JSON\n"
@@ -117,6 +151,7 @@ def read_and_solve_current_note(
     pid: str | int | None = None,
     build_if_needed: bool = True,
     timeout: float = 20.0,
+    stop_event: Any | None = None,
 ) -> CurrentNoteResult:
     root = _project_root(project_root)
     payload, note_path, stdout, stderr = export_current_note(
@@ -125,6 +160,7 @@ def read_and_solve_current_note(
         pid=pid,
         build_if_needed=build_if_needed,
         timeout=timeout,
+        stop_event=stop_event,
     )
     note = ResearchNote.from_dict(payload)
     kb = KnowledgeBase.load(root)
@@ -158,16 +194,23 @@ def apply_solution_to_current_note(
     verify_delay_ms: int = 600,
     build_if_needed: bool = True,
     timeout: float = 30.0,
+    stop_event: Any | None = None,
 ) -> tuple[dict[str, Any], Path, Path, str, str]:
     """Send solver placements to the open Thaumcraft research table."""
 
     root = _project_root(project_root)
     plan = _resolve_runtime_path(project_root, plan_path, "apply_plan.json")
     result = _resolve_runtime_path(project_root, result_path, "apply_result.json")
+    cancel_file = _resolve_runtime_path(project_root, None, f"{result.stem}.cancel")
     plan.parent.mkdir(parents=True, exist_ok=True)
     result.parent.mkdir(parents=True, exist_ok=True)
     if result.exists():
         result.unlink()
+    if cancel_file.exists():
+        cancel_file.unlink()
+
+    if _is_cancelled(stop_event):
+        raise OperationCancelled("operation cancelled before apply started")
 
     if resource_plan is not None and not resource_plan.is_sufficient:
         raise RuntimeError(f"aspect resources are insufficient: {resource_plan.shortages}")
@@ -177,6 +220,7 @@ def apply_solution_to_current_note(
         resource_plan=resource_plan,
         delay_ms=delay_ms,
         verify_delay_ms=verify_delay_ms,
+        cancel_file=cancel_file,
     )
     plan.write_text(json.dumps(plan_payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
@@ -203,6 +247,8 @@ def apply_solution_to_current_note(
         pid=pid,
         build_if_needed=build_if_needed,
         timeout=timeout,
+        stop_event=stop_event,
+        cancel_path=cancel_file,
     )
     if not result.exists():
         raise RuntimeError(
@@ -215,6 +261,8 @@ def apply_solution_to_current_note(
             f"Java agent apply returned an error: {payload.get('error')}\n"
             f"{payload.get('stackTrace', '')}"
         )
+    if payload.get("status") == "cancelled" or _is_cancelled(stop_event):
+        raise OperationCancelled(str(payload.get("message") or "operation cancelled"))
     return payload, plan, result, completed.stdout, completed.stderr
 
 
@@ -229,6 +277,7 @@ def read_solve_and_apply_current_note(
     verify_delay_ms: int = 600,
     build_if_needed: bool = True,
     timeout: float = 40.0,
+    stop_event: Any | None = None,
 ) -> ApplyResult:
     current = read_and_solve_current_note(
         project_root,
@@ -236,7 +285,10 @@ def read_solve_and_apply_current_note(
         pid=pid,
         build_if_needed=build_if_needed,
         timeout=min(timeout, 20.0),
+        stop_event=stop_event,
     )
+    if _is_cancelled(stop_event):
+        raise OperationCancelled("operation cancelled before apply")
     apply_payload, apply_plan, apply_result, stdout, stderr = apply_solution_to_current_note(
         current.solution,
         project_root,
@@ -248,6 +300,7 @@ def read_solve_and_apply_current_note(
         verify_delay_ms=verify_delay_ms,
         build_if_needed=build_if_needed,
         timeout=timeout,
+        stop_event=stop_event,
     )
     return ApplyResult(
         current=current,
@@ -265,6 +318,7 @@ def solution_to_apply_plan(
     resource_plan: ResourcePlan | None = None,
     delay_ms: int = 120,
     verify_delay_ms: int = 600,
+    cancel_file: Path | str | None = None,
 ) -> dict[str, Any]:
     combines = [step.to_dict() for step in resource_plan.synthesis] if resource_plan is not None else []
     payload: dict[str, Any] = {
@@ -278,6 +332,8 @@ def solution_to_apply_plan(
             for coord, aspect in sorted(solution.placements.items())
         ],
     }
+    if cancel_file is not None:
+        payload["cancelFile"] = str(cancel_file)
     return payload
 
 
@@ -306,6 +362,7 @@ def export_inventory_notes(
     pid: str | int | None = None,
     build_if_needed: bool = True,
     timeout: float = 20.0,
+    stop_event: Any | None = None,
 ) -> tuple[dict[str, Any], Path, str, str]:
     """Export research-note stacks from the open research-table container."""
 
@@ -320,7 +377,10 @@ def export_inventory_notes(
         pid=pid,
         build_if_needed=build_if_needed,
         timeout=timeout,
+        stop_event=stop_event,
     )
+    if _is_cancelled(stop_event):
+        raise OperationCancelled("operation cancelled after inventory scan")
     if not output.exists():
         raise RuntimeError(
             "Java agent inventory scan finished but did not create JSON\n"
@@ -343,6 +403,7 @@ def load_inventory_note_slot(
     pid: str | int | None = None,
     build_if_needed: bool = True,
     timeout: float = 20.0,
+    stop_event: Any | None = None,
 ) -> tuple[dict[str, Any], Path, str, str]:
     """Move/swap one container slot into the research-table note slot."""
 
@@ -357,7 +418,10 @@ def load_inventory_note_slot(
         pid=pid,
         build_if_needed=build_if_needed,
         timeout=timeout,
+        stop_event=stop_event,
     )
+    if _is_cancelled(stop_event):
+        raise OperationCancelled("operation cancelled after loading inventory note")
     if not result.exists():
         raise RuntimeError(
             "Java agent load-note finished but did not create JSON\n"
@@ -400,9 +464,16 @@ def solve_all_inventory_notes(
         pid=pid,
         build_if_needed=build_if_needed,
         timeout=min(timeout, 20.0),
+        stop_event=stop_event,
     )
+    last_inventory_path = inventory_path
+    last_inventory_stdout = inv_stdout
+    last_inventory_stderr = inv_stderr
     notes = [note for note in inventory.get("notes", []) if isinstance(note, dict)]
     unsolved = [note for note in notes if not bool(note.get("complete"))]
+    pending_notes = _unsolved_inventory_notes(notes)
+    table_note = _table_inventory_note(notes)
+    current_needs_solve = bool(table_note is not None and not bool(table_note.get("complete")))
     _emit_progress(
         progress_callback,
         "inventory-scan-done",
@@ -422,10 +493,91 @@ def solve_all_inventory_notes(
         }
     if _is_cancelled(stop_event):
         return _cancelled_wheelchair_payload(solved, steps, "stopped before applying any note")
+    if not current_needs_solve and not pending_notes:
+        return {
+            "source": "thaum-nexus",
+            "status": "ok",
+            "action": "wheelchair-apply",
+            "message": "no unsolved inventory notes remain",
+            "solvedOrAttempted": solved,
+            "steps": steps,
+            "lastInventoryJson": str(last_inventory_path),
+            "attacher": {"stdout": last_inventory_stdout, "stderr": last_inventory_stderr},
+        }
 
     for iteration in range(max_notes):
         if _is_cancelled(stop_event):
             return _cancelled_wheelchair_payload(solved, steps, "stopped before next note")
+
+        if not current_needs_solve:
+            next_note = pending_notes.pop(0) if pending_notes else None
+            if next_note is None:
+                _emit_progress(
+                    progress_callback,
+                    "inventory-final-scan",
+                    f"第 {iteration + 1} 轮：队列已处理完，最后确认背包未解笔记",
+                    iteration=iteration,
+                )
+                inventory, last_inventory_path, last_inventory_stdout, last_inventory_stderr = export_inventory_notes(
+                    project_root,
+                    output_path=f"runtime/wheelchair_inventory_final_{iteration:02d}.json",
+                    pid=pid,
+                    build_if_needed=build_if_needed,
+                    timeout=min(timeout, 20.0),
+                    stop_event=stop_event,
+                )
+                notes = [note for note in inventory.get("notes", []) if isinstance(note, dict)]
+                pending_notes = _unsolved_inventory_notes(notes)
+                table_note = _table_inventory_note(notes)
+                current_needs_solve = bool(table_note is not None and not bool(table_note.get("complete")))
+                if not current_needs_solve:
+                    next_note = pending_notes.pop(0) if pending_notes else None
+                    if next_note is None:
+                        return {
+                            "source": "thaum-nexus",
+                            "status": "ok",
+                            "action": "wheelchair-apply",
+                            "message": "no unsolved inventory notes remain",
+                            "solvedOrAttempted": solved,
+                            "steps": steps,
+                            "lastInventoryJson": str(last_inventory_path),
+                            "attacher": {"stdout": last_inventory_stdout, "stderr": last_inventory_stderr},
+                        }
+
+            if not current_needs_solve:
+                if _is_cancelled(stop_event):
+                    return _cancelled_wheelchair_payload(solved, steps, "stopped before loading next note")
+                _emit_progress(
+                    progress_callback,
+                    "load-inventory-note",
+                    f"把下一张未解笔记放入研究台：{next_note.get('researchKey', '')}",
+                    iteration=iteration,
+                    slot=int(next_note["slot"]),
+                    researchKey=next_note.get("researchKey", ""),
+                )
+                load_payload, load_result, load_stdout, load_stderr = load_inventory_note_slot(
+                    int(next_note["slot"]),
+                    project_root,
+                    result_path=f"runtime/wheelchair_load_{iteration:02d}.json",
+                    pid=pid,
+                    build_if_needed=build_if_needed,
+                    timeout=min(timeout, 20.0),
+                    stop_event=stop_event,
+                )
+                steps.append(
+                    {
+                        "iteration": iteration,
+                        "action": "load-inventory-note",
+                        "slot": int(next_note["slot"]),
+                        "researchKey": next_note.get("researchKey", ""),
+                        "resultJson": str(load_result),
+                        "result": load_payload,
+                        "stdout": load_stdout,
+                        "stderr": load_stderr,
+                    }
+                )
+                current_needs_solve = True
+
         try:
             _emit_progress(
                 progress_callback,
@@ -439,143 +591,98 @@ def solve_all_inventory_notes(
                 pid=pid,
                 build_if_needed=build_if_needed,
                 timeout=min(timeout, 20.0),
+                stop_event=stop_event,
             )
-            if not current.note.complete:
-                if not current.solution.placements:
-                    steps.append(
-                        {
-                            "iteration": iteration,
-                            "action": "solve-current-note",
-                            "status": "blocked",
-                            "researchKey": current.note.research_key,
-                            "message": "note is not complete but solver has no placements to send",
-                        }
-                    )
-                    break
-                if _is_cancelled(stop_event):
-                    return _cancelled_wheelchair_payload(solved, steps, "stopped before applying current note")
-                _emit_progress(
-                    progress_callback,
-                    "apply-current-note",
-                    (
-                        f"正在解 {current.note.research_key or current.note.board.name}："
-                        f"{len(current.solution.placements)} 个放置点"
-                    ),
-                    iteration=iteration,
-                    researchKey=current.note.research_key,
-                    placements=len(current.solution.placements),
-                    combines=(
-                        len(current.resource_plan.synthesis)
-                        if current.resource_plan is not None
-                        else 0
-                    ),
+            if current.note.complete:
+                current_needs_solve = False
+                steps.append(
+                    {
+                        "iteration": iteration,
+                        "action": "read-current-note",
+                        "status": "already-complete",
+                        "researchKey": current.note.research_key,
+                    }
                 )
-                apply_payload, plan, result, stdout, stderr = apply_solution_to_current_note(
-                    current.solution,
-                    project_root,
-                    resource_plan=current.resource_plan,
-                    plan_path=f"runtime/wheelchair_apply_plan_{iteration:02d}.json",
-                    result_path=f"runtime/wheelchair_apply_result_{iteration:02d}.json",
-                    pid=pid,
-                    delay_ms=delay_ms,
-                    verify_delay_ms=verify_delay_ms,
-                    build_if_needed=build_if_needed,
-                    timeout=timeout,
-                )
-                placements_sent = int(apply_payload.get("placementsSent", 0) or 0)
-                combines_sent = int(apply_payload.get("combinesSent", 0) or 0)
-                solved += 1
+                continue
+            if not current.solution.placements:
                 steps.append(
                     {
                         "iteration": iteration,
                         "action": "solve-current-note",
+                        "status": "blocked",
                         "researchKey": current.note.research_key,
-                        "placements": len(current.solution.placements),
-                        "placementsSent": placements_sent,
-                        "combinesSent": combines_sent,
-                        "applyPlanJson": str(plan),
-                        "applyResultJson": str(result),
-                        "stdout": stdout,
-                        "stderr": stderr,
+                        "message": "note is not complete but solver has no placements to send",
                     }
                 )
-                _emit_progress(
-                    progress_callback,
-                    "apply-current-note-done",
-                    (
-                        f"完成 {current.note.research_key or current.note.board.name}："
-                        f"合成 {combines_sent} 次，放置 {placements_sent} 个"
-                    ),
-                    iteration=iteration,
-                    researchKey=current.note.research_key,
-                    placementsSent=placements_sent,
-                    combinesSent=combines_sent,
-                )
-                if placements_sent == 0 and combines_sent == 0 and current.solution.placements:
-                    break
-                continue
+                break
+            if _is_cancelled(stop_event):
+                return _cancelled_wheelchair_payload(solved, steps, "stopped before applying current note")
+            _emit_progress(
+                progress_callback,
+                "apply-current-note",
+                (
+                    f"正在解 {current.note.research_key or current.note.board.name}："
+                    f"{len(current.solution.placements)} 个放置点"
+                ),
+                iteration=iteration,
+                researchKey=current.note.research_key,
+                placements=len(current.solution.placements),
+                combines=(
+                    len(current.resource_plan.synthesis)
+                    if current.resource_plan is not None
+                    else 0
+                ),
+            )
+            apply_payload, plan, result, stdout, stderr = apply_solution_to_current_note(
+                current.solution,
+                project_root,
+                resource_plan=current.resource_plan,
+                plan_path=f"runtime/wheelchair_apply_plan_{iteration:02d}.json",
+                result_path=f"runtime/wheelchair_apply_result_{iteration:02d}.json",
+                pid=pid,
+                delay_ms=delay_ms,
+                verify_delay_ms=verify_delay_ms,
+                build_if_needed=build_if_needed,
+                timeout=timeout,
+                stop_event=stop_event,
+            )
+            placements_sent = int(apply_payload.get("placementsSent", 0) or 0)
+            combines_sent = int(apply_payload.get("combinesSent", 0) or 0)
+            solved += 1
+            current_needs_solve = False
+            steps.append(
+                {
+                    "iteration": iteration,
+                    "action": "solve-current-note",
+                    "researchKey": current.note.research_key,
+                    "placements": len(current.solution.placements),
+                    "placementsSent": placements_sent,
+                    "combinesSent": combines_sent,
+                    "applyPlanJson": str(plan),
+                    "applyResultJson": str(result),
+                    "stdout": stdout,
+                    "stderr": stderr,
+                }
+            )
+            _emit_progress(
+                progress_callback,
+                "apply-current-note-done",
+                (
+                    f"完成 {current.note.research_key or current.note.board.name}："
+                    f"合成 {combines_sent} 次，放置 {placements_sent} 个"
+                ),
+                iteration=iteration,
+                researchKey=current.note.research_key,
+                placementsSent=placements_sent,
+                combinesSent=combines_sent,
+            )
+            if placements_sent == 0 and combines_sent == 0 and current.solution.placements:
+                break
+        except OperationCancelled:
+            return _cancelled_wheelchair_payload(solved, steps, "stopped during current note")
         except Exception as exc:
+            current_needs_solve = False
             steps.append({"iteration": iteration, "action": "read-current-note", "status": "skipped", "error": str(exc)})
-
-        if _is_cancelled(stop_event):
-            return _cancelled_wheelchair_payload(solved, steps, "stopped before scanning inventory")
-        _emit_progress(
-            progress_callback,
-            "inventory-rescan",
-            f"第 {iteration + 1} 轮：重新扫描背包未解笔记",
-            iteration=iteration,
-        )
-        inventory, inventory_path, stdout, stderr = export_inventory_notes(
-            project_root,
-            output_path=f"runtime/wheelchair_inventory_{iteration:02d}.json",
-            pid=pid,
-            build_if_needed=build_if_needed,
-            timeout=min(timeout, 20.0),
-        )
-        notes = [note for note in inventory.get("notes", []) if isinstance(note, dict)]
-        next_note = _first_unsolved_inventory_note(notes)
-        if next_note is None:
-            return {
-                "source": "thaum-nexus",
-                "status": "ok",
-                "action": "wheelchair-apply",
-                "message": "no unsolved inventory notes remain",
-                "solvedOrAttempted": solved,
-                "steps": steps,
-                "lastInventoryJson": str(inventory_path),
-                "attacher": {"stdout": stdout, "stderr": stderr},
-            }
-
-        if _is_cancelled(stop_event):
-            return _cancelled_wheelchair_payload(solved, steps, "stopped before loading next note")
-        _emit_progress(
-            progress_callback,
-            "load-inventory-note",
-            f"把下一张未解笔记放入研究台：{next_note.get('researchKey', '')}",
-            iteration=iteration,
-            slot=int(next_note["slot"]),
-            researchKey=next_note.get("researchKey", ""),
-        )
-        load_payload, load_result, load_stdout, load_stderr = load_inventory_note_slot(
-            int(next_note["slot"]),
-            project_root,
-            result_path=f"runtime/wheelchair_load_{iteration:02d}.json",
-            pid=pid,
-            build_if_needed=build_if_needed,
-            timeout=min(timeout, 20.0),
-        )
-        steps.append(
-            {
-                "iteration": iteration,
-                "action": "load-inventory-note",
-                "slot": int(next_note["slot"]),
-                "researchKey": next_note.get("researchKey", ""),
-                "resultJson": str(load_result),
-                "result": load_payload,
-                "stdout": load_stdout,
-                "stderr": load_stderr,
-            }
-        )
 
     return {
         "source": "thaum-nexus",
@@ -588,13 +695,23 @@ def solve_all_inventory_notes(
 
 
 def _first_unsolved_inventory_note(notes: list[dict[str, Any]]) -> dict[str, Any] | None:
+    candidates = _unsolved_inventory_notes(notes)
+    return candidates[0] if candidates else None
+
+
+def _unsolved_inventory_notes(notes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     candidates = [
         note for note in notes
         if not bool(note.get("complete")) and str(note.get("slotKind") or "") != "table-note"
     ]
-    if not candidates:
-        return None
-    return sorted(candidates, key=lambda item: int(item.get("slot", 0)))[0]
+    return sorted(candidates, key=lambda item: int(item.get("slot", 0)))
+
+
+def _table_inventory_note(notes: list[dict[str, Any]]) -> dict[str, Any] | None:
+    for note in notes:
+        if str(note.get("slotKind") or "") == "table-note":
+            return note
+    return None
 
 
 def _is_cancelled(stop_event: Any | None) -> bool:
@@ -704,29 +821,357 @@ def agent_jar_path(project_root: Path | str | None = None) -> Path:
 
 
 def find_java() -> str:
-    if os.environ.get("JAVA_HOME"):
-        candidate = Path(os.environ["JAVA_HOME"]) / "bin" / "java.exe"
-        if candidate.exists():
-            return str(candidate)
+    jdk_home = _find_jdk_home()
+    if jdk_home is not None:
+        java = jdk_home / "bin" / "java.exe"
+        if java.exists():
+            return str(java)
+        java = jdk_home / "bin" / "java"
+        if java.exists():
+            return str(java)
     return shutil.which("java") or "java"
 
 
 def find_tools_jar() -> Path | None:
-    candidates: list[Path] = []
-    if os.environ.get("JAVA_HOME"):
-        candidates.append(Path(os.environ["JAVA_HOME"]) / "lib" / "tools.jar")
-    javac = shutil.which("javac")
-    if javac:
-        java_home = Path(javac).resolve().parent.parent
-        candidates.append(java_home / "lib" / "tools.jar")
-    java = shutil.which("java")
-    if java:
-        java_home = Path(java).resolve().parent.parent
-        candidates.append(java_home / "lib" / "tools.jar")
+    candidates = [home / "lib" / "tools.jar" for home in _jdk_home_candidates()]
     for candidate in candidates:
         if candidate.exists():
             return candidate
     return None
+
+
+def java_environment_diagnostics(
+    *,
+    java: str | None = None,
+    tools_jar: Path | None = None,
+    agent_jar: Path | None = None,
+    target_pid: str | int | None = None,
+    runtime: JavaRuntime | None = None,
+) -> dict[str, Any]:
+    java = java or find_java()
+    tools_jar = tools_jar if tools_jar is not None else find_tools_jar()
+    selected_jdk = _find_jdk_home()
+    candidates = _jdk_home_candidates()
+    version_text = _java_version_text(java)
+    java_major = _parse_java_major_version(version_text)
+    payload: dict[str, Any] = {
+        "java": java,
+        "selectedJdkHome": str(selected_jdk) if selected_jdk is not None else "",
+        "javaHome": os.environ.get("JAVA_HOME", ""),
+        "thaumNexusJdk": os.environ.get("THAUM_NEXUS_JDK", ""),
+        "pathJava": shutil.which("java") or "",
+        "pathJavac": shutil.which("javac") or "",
+        "toolsJar": str(tools_jar) if tools_jar is not None else "",
+        "agentJar": str(agent_jar) if agent_jar is not None else "",
+        "javaVersion": version_text,
+        "javaMajor": java_major,
+        "jdkCandidates": [str(candidate) for candidate in candidates[:12]],
+    }
+    if runtime is not None:
+        payload["attacherRuntime"] = {
+            "java": runtime.java,
+            "javaHome": str(runtime.java_home) if runtime.java_home is not None else "",
+            "major": runtime.major,
+            "toolsJar": str(runtime.tools_jar) if runtime.tools_jar is not None else "",
+            "source": runtime.source,
+        }
+    if target_pid is not None:
+        payload["targetPid"] = str(target_pid)
+        payload["targetProcess"] = _windows_process_info(target_pid)
+    if (java_major is None or java_major <= 8) and tools_jar is None:
+        payload["warning"] = (
+            "Java 8 目标需要 lib/tools.jar；Java 9+ 目标需要带 jdk.attach 模块的同版本 JDK/运行时。"
+        )
+    return payload
+
+
+def list_java_processes(timeout: float = 5.0) -> list[JavaProcess]:
+    """List visible local JVMs using jps plus Windows process metadata."""
+
+    by_pid: dict[str, JavaProcess] = {}
+    for jps in _jps_candidates():
+        try:
+            completed = subprocess.run(
+                [str(jps), "-lv"],
+                text=True,
+                capture_output=True,
+                timeout=timeout,
+                **_hidden_subprocess_kwargs(),
+            )
+        except Exception:
+            continue
+        if completed.returncode != 0:
+            continue
+        for process in _parse_jps_output(completed.stdout):
+            by_pid.setdefault(process.pid, process)
+
+    for process in _windows_java_processes():
+        current = by_pid.get(process.pid)
+        if current is None:
+            by_pid[process.pid] = process
+        else:
+            by_pid[process.pid] = JavaProcess(
+                pid=current.pid,
+                display_name=current.display_name or process.display_name,
+                java_path=process.java_path or current.java_path,
+                command_line=process.command_line or current.command_line,
+            )
+
+    return sorted(by_pid.values(), key=lambda item: int(item.pid))
+
+
+def _parse_jps_output(output: str) -> list[JavaProcess]:
+    processes: list[JavaProcess] = []
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        parts = line.split(maxsplit=1)
+        pid = parts[0].strip()
+        if not pid.isdigit():
+            continue
+        display_name = parts[1].strip() if len(parts) > 1 else ""
+        processes.append(JavaProcess(pid=pid, display_name=display_name))
+    return processes
+
+
+def _jps_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    seen: set[str] = set()
+
+    def add(path: Path | str | None) -> None:
+        if not path:
+            return
+        candidate = Path(path)
+        key = _path_key(candidate)
+        if candidate.exists() and key not in seen:
+            seen.add(key)
+            candidates.append(candidate)
+
+    for home in _jdk_home_candidates():
+        add(home / "bin" / ("jps.exe" if os.name == "nt" else "jps"))
+    found = shutil.which("jps")
+    if found:
+        add(found)
+    return candidates
+
+
+def _choose_minecraft_jvm_pid() -> str | None:
+    candidates = [process for process in list_java_processes() if _is_minecraft_like_process(process)]
+    return candidates[0].pid if candidates else None
+
+
+def _is_minecraft_like_process(process: JavaProcess) -> bool:
+    value = process.search_text
+    return (
+        "minecraft" in value
+        or "launchwrapper" in value
+        or "net.minecraft.launchwrapper.launch" in value
+        or "org.prismlauncher.entrypoint" in value
+        or "org.multimc.entrypoint" in value
+        or "forge" in value
+        or "gtnh" in value
+        or "gradlestart" in value
+    )
+
+
+def _select_attacher_runtime(pid: str | int | None) -> JavaRuntime:
+    target_pid = str(pid).strip() if pid is not None else ""
+    if target_pid:
+        target_runtime = _runtime_from_process(target_pid)
+        if target_runtime is not None:
+            compatible = _compatible_runtime_for_target(target_runtime)
+            if compatible is not None:
+                return compatible
+
+    java = find_java()
+    home = _java_home_from_executable(Path(java))
+    major = _java_major_version(java)
+    return JavaRuntime(
+        java=java,
+        java_home=home,
+        major=major,
+        tools_jar=find_tools_jar() if major is None or major <= 8 else None,
+        source="default",
+    )
+
+
+def _runtime_from_process(pid: str | int) -> JavaRuntime | None:
+    info = _windows_process_info(pid)
+    executable = info.get("executablePath") if info else ""
+    if not executable:
+        return None
+    home = _java_home_from_executable(Path(executable))
+    if home is None:
+        return None
+    java = _java_executable_for_home(home)
+    if java is None:
+        return None
+    return JavaRuntime(
+        java=str(java),
+        java_home=home,
+        major=_java_major_version(str(java)),
+        tools_jar=home / "lib" / "tools.jar" if (home / "lib" / "tools.jar").exists() else None,
+        source=f"target-pid:{pid}",
+    )
+
+
+def _compatible_runtime_for_target(target: JavaRuntime) -> JavaRuntime | None:
+    major = target.major
+    if major is None:
+        return target
+    if major <= 8:
+        runtime = _find_runtime_for_major(8, require_attach=True)
+        return runtime or target
+    if _java_supports_jdk_attach(target.java):
+        return target
+    runtime = _find_runtime_for_major(major, require_attach=True)
+    return runtime or target
+
+
+def _find_runtime_for_major(major: int, *, require_attach: bool) -> JavaRuntime | None:
+    for home in _jdk_home_candidates():
+        java = _java_executable_for_home(home)
+        if java is None:
+            continue
+        runtime_major = _java_major_version(str(java))
+        if runtime_major != major:
+            continue
+        tools_jar = home / "lib" / "tools.jar"
+        if major <= 8:
+            if require_attach and not tools_jar.exists():
+                continue
+            return JavaRuntime(
+                java=str(java),
+                java_home=home,
+                major=runtime_major,
+                tools_jar=tools_jar if tools_jar.exists() else None,
+                source=f"jdk-candidate:{major}",
+            )
+        if require_attach and not _java_supports_jdk_attach(str(java)):
+            continue
+        return JavaRuntime(java=str(java), java_home=home, major=runtime_major, source=f"jdk-candidate:{major}")
+    return None
+
+
+def _build_attacher_command(
+    runtime: JavaRuntime,
+    agent_jar: Path,
+    attacher_args: list[str],
+    *,
+    pid: str | int | None,
+) -> list[str]:
+    classpath_parts = [str(agent_jar)]
+    cmd = [runtime.java]
+    if runtime.major is not None and runtime.major >= 9:
+        cmd += ["--add-modules", "jdk.attach"]
+    elif runtime.tools_jar is not None:
+        classpath_parts.insert(0, str(runtime.tools_jar))
+    cmd += [
+        "-cp",
+        os.pathsep.join(classpath_parts),
+        "thaumnexus.agent.ThaumNexusAttacher",
+        str(agent_jar),
+        *attacher_args,
+    ]
+    if pid is not None:
+        cmd.append(str(pid))
+    return cmd
+
+
+def _windows_java_processes() -> list[JavaProcess]:
+    if os.name != "nt":
+        return []
+    script = (
+        "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; "
+        "Get-CimInstance Win32_Process | "
+        "Where-Object { $_.Name -match '^javaw?\\.exe$' } | "
+        "Select-Object ProcessId,Name,ExecutablePath,CommandLine | "
+        "ConvertTo-Json -Compress"
+    )
+    payload = _run_powershell_json(script)
+    if payload is None:
+        return []
+    rows = payload if isinstance(payload, list) else [payload]
+    processes: list[JavaProcess] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        pid = str(row.get("ProcessId") or "").strip()
+        if not pid.isdigit():
+            continue
+        command_line = str(row.get("CommandLine") or "").strip()
+        executable = str(row.get("ExecutablePath") or "").strip()
+        name = str(row.get("Name") or "").strip()
+        display_name = _display_name_from_command_line(command_line) or name
+        processes.append(
+            JavaProcess(
+                pid=pid,
+                display_name=display_name,
+                java_path=executable,
+                command_line=command_line,
+            )
+        )
+    return processes
+
+
+def _windows_process_info(pid: str | int) -> dict[str, str]:
+    if os.name != "nt":
+        return {}
+    pid_text = str(pid).strip()
+    if not pid_text.isdigit():
+        return {}
+    script = (
+        "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; "
+        f"Get-CimInstance Win32_Process -Filter \"ProcessId = {pid_text}\" | "
+        "Select-Object ProcessId,Name,ExecutablePath,CommandLine | "
+        "ConvertTo-Json -Compress"
+    )
+    payload = _run_powershell_json(script)
+    if not isinstance(payload, dict):
+        return {}
+    return {
+        "pid": str(payload.get("ProcessId") or ""),
+        "name": str(payload.get("Name") or ""),
+        "executablePath": str(payload.get("ExecutablePath") or ""),
+        "commandLine": str(payload.get("CommandLine") or ""),
+    }
+
+
+def _run_powershell_json(script: str) -> Any:
+    try:
+        completed = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            timeout=8.0,
+            **_hidden_subprocess_kwargs(),
+        )
+    except Exception:
+        return None
+    if completed.returncode != 0 or not completed.stdout.strip():
+        return None
+    try:
+        return json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return None
+
+
+def _display_name_from_command_line(command_line: str) -> str:
+    if not command_line:
+        return ""
+    parts = command_line.split()
+    for token in parts[1:]:
+        value = token.strip('"')
+        if value.startswith("-"):
+            continue
+        if value.endswith(".jar"):
+            return value
+        if "." in value:
+            return value
+    return ""
 
 
 def _run_attacher(
@@ -736,40 +1181,118 @@ def _run_attacher(
     pid: str | int | None,
     build_if_needed: bool,
     timeout: float,
+    stop_event: Any | None = None,
+    cancel_path: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    agent_jar = ensure_agent_built(root) if build_if_needed else agent_jar_path(root)
-    tools_jar = find_tools_jar()
-    java = find_java()
-    classpath_parts = [str(agent_jar)]
-    if tools_jar is not None:
-        classpath_parts.insert(0, str(tools_jar))
+    if _is_cancelled(stop_event):
+        if cancel_path is not None:
+            _touch_cancel_file(cancel_path)
+        raise OperationCancelled("operation cancelled before Java attach")
 
-    cmd = [
-        java,
-        "-cp",
-        os.pathsep.join(classpath_parts),
-        "thaumnexus.agent.ThaumNexusAttacher",
-        str(agent_jar),
-        *attacher_args,
-    ]
-    if pid is not None:
-        cmd.append(str(pid))
+    agent_jar = ensure_agent_built(root) if build_if_needed else agent_jar_path(root)
+    target_pid = str(pid).strip() if pid is not None and str(pid).strip() else _choose_minecraft_jvm_pid()
+    runtime = _select_attacher_runtime(target_pid)
+    cmd = _build_attacher_command(runtime, agent_jar, attacher_args, pid=target_pid)
 
     cwd = app_root() if is_frozen() else root
-    completed = subprocess.run(
+    completed = _run_cancellable_subprocess(
         cmd,
         cwd=str(cwd),
-        text=True,
-        capture_output=True,
         timeout=timeout,
-        **_hidden_subprocess_kwargs(),
+        stop_event=stop_event,
+        cancel_path=cancel_path,
     )
+    if _is_cancelled(stop_event):
+        raise OperationCancelled(
+            "operation cancelled while Java attach was running\n"
+            f"STDOUT:\n{completed.stdout}\nSTDERR:\n{completed.stderr}"
+        )
     if completed.returncode != 0:
+        diagnostics = java_environment_diagnostics(
+            java=runtime.java,
+            tools_jar=runtime.tools_jar,
+            agent_jar=agent_jar,
+            target_pid=target_pid,
+            runtime=runtime,
+        )
         raise RuntimeError(
             "Java agent attach failed with exit code "
-            f"{completed.returncode}\nSTDOUT:\n{completed.stdout}\nSTDERR:\n{completed.stderr}"
+            f"{completed.returncode}\n"
+            f"DIAGNOSTICS:\n{json.dumps(diagnostics, ensure_ascii=False, indent=2)}\n"
+            f"STDOUT:\n{completed.stdout}\nSTDERR:\n{completed.stderr}"
         )
     return completed
+
+
+def _run_cancellable_subprocess(
+    cmd: list[str],
+    *,
+    cwd: str,
+    timeout: float,
+    stop_event: Any | None = None,
+    cancel_path: Path | None = None,
+) -> subprocess.CompletedProcess[str]:
+    if stop_event is None:
+        return subprocess.run(
+            cmd,
+            cwd=cwd,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            **_hidden_subprocess_kwargs(),
+        )
+
+    process = subprocess.Popen(
+        cmd,
+        cwd=cwd,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        **_hidden_subprocess_kwargs(),
+    )
+    started = time.monotonic()
+    cancel_deadline: float | None = None
+    while True:
+        returncode = process.poll()
+        if returncode is not None:
+            stdout, stderr = process.communicate()
+            return subprocess.CompletedProcess(cmd, returncode, stdout, stderr)
+
+        now = time.monotonic()
+        if timeout is not None and now - started >= timeout:
+            _terminate_process(process)
+            raise subprocess.TimeoutExpired(cmd, timeout)
+
+        if _is_cancelled(stop_event):
+            if cancel_path is not None:
+                _touch_cancel_file(cancel_path)
+            if cancel_deadline is None:
+                cancel_deadline = now + 0.8
+            elif now >= cancel_deadline:
+                stdout, stderr = _terminate_process(process)
+                raise OperationCancelled(
+                    "operation cancelled while Java attach was running\n"
+                    f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+                )
+
+        time.sleep(0.05)
+
+
+def _touch_cancel_file(path: Path) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("cancelled\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _terminate_process(process: subprocess.Popen[str]) -> tuple[str, str]:
+    try:
+        process.terminate()
+        return process.communicate(timeout=0.8)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        return process.communicate()
 
 
 def _resolve_runtime_path(project_root: Path | str | None, path: Path | str | None, default_name: str) -> Path:
@@ -808,6 +1331,206 @@ def _hidden_subprocess_kwargs() -> dict[str, Any]:
         kwargs["startupinfo"] = startupinfo
 
     return kwargs
+
+
+def _find_jdk_home() -> Path | None:
+    for home in _jdk_home_candidates():
+        if (home / "bin" / "java.exe").exists() or (home / "bin" / "java").exists():
+            return home
+    return None
+
+
+def _jdk_home_candidates() -> list[Path]:
+    ranked: list[tuple[int, Path]] = []
+    seen: set[str] = set()
+
+    def add_home(path: Path | str | None, rank: int) -> None:
+        if not path:
+            return
+        for home in _expand_jdk_home(Path(path).expanduser()):
+            key = _path_key(home)
+            if key not in seen:
+                seen.add(key)
+                ranked.append((rank, home))
+
+    add_home(os.environ.get("THAUM_NEXUS_JDK"), 0)
+    for bundled in _bundled_jdk_roots():
+        add_home(bundled, 1)
+
+    add_home(os.environ.get("JAVA_HOME"), 2)
+
+    javac = shutil.which("javac")
+    if javac:
+        add_home(Path(javac).resolve().parent.parent, 3)
+
+    java = shutil.which("java")
+    if java:
+        add_home(Path(java).resolve().parent.parent, 4)
+
+    if os.name == "nt":
+        for base in (
+            os.environ.get("ProgramFiles"),
+            os.environ.get("ProgramFiles(x86)"),
+        ):
+            if not base:
+                continue
+            for parent in (
+                Path(base) / "Java",
+                Path(base) / "Eclipse Adoptium",
+                Path(base) / "Microsoft",
+                Path(base) / "Zulu",
+            ):
+                if not parent.exists():
+                    continue
+                for child in sorted(parent.glob("jdk*"), reverse=True):
+                    add_home(child, 5)
+
+    # Within the same source rank, keep Java 8 JDKs near the front for legacy
+    # GTNH clients. Target-specific runtime selection overrides this when a
+    # game PID is known.
+    def sort_key(item: tuple[int, Path]) -> tuple[int, int, int, str]:
+        rank, home = item
+        tools_jar = home / "lib" / "tools.jar"
+        return (
+            rank,
+            0 if tools_jar.exists() and "1.8" in home.name else 1,
+            0 if tools_jar.exists() else 1,
+            str(home).lower(),
+        )
+
+    return [home for _, home in sorted(ranked, key=sort_key)]
+
+
+def _bundled_jdk_roots() -> list[Path]:
+    """Candidate portable JDK locations shipped next to the application."""
+
+    roots: list[Path] = []
+    for base in (app_root(), resource_root()):
+        for name in (
+            "jdk",
+            "jdk8",
+            "jdk17",
+            "jdk18",
+            "jdk19",
+            "jdk20",
+            "jdk21",
+            "jdk22",
+            "jdk23",
+            "jdk24",
+            "jdk25",
+            "java",
+            "java8",
+            "java17",
+            "java18",
+            "java19",
+            "java20",
+            "java21",
+            "java22",
+            "java23",
+            "java24",
+            "java25",
+            "portable-jdk",
+        ):
+            candidate = base / name
+            if _path_key(candidate) not in {_path_key(root) for root in roots}:
+                roots.append(candidate)
+    return roots
+
+
+def _expand_jdk_home(path: Path) -> list[Path]:
+    """Return ``path`` and one-level children that look like JDK homes."""
+
+    if _has_java_binary(path) or (path / "lib" / "tools.jar").exists():
+        return [path]
+    if not path.exists() or not path.is_dir():
+        return [path]
+
+    homes: list[Path] = []
+    for child in sorted(path.iterdir(), key=lambda item: item.name.lower()):
+        if child.is_dir() and (_has_java_binary(child) or (child / "lib" / "tools.jar").exists()):
+            homes.append(child)
+    return homes or [path]
+
+
+def _has_java_binary(home: Path) -> bool:
+    return (home / "bin" / "java.exe").exists() or (home / "bin" / "java").exists()
+
+
+def _java_executable_for_home(home: Path) -> Path | None:
+    for name in ("java.exe", "java"):
+        candidate = home / "bin" / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _java_home_from_executable(java_path: Path) -> Path | None:
+    try:
+        resolved = java_path.resolve()
+    except OSError:
+        resolved = java_path.absolute()
+    if resolved.parent.name.lower() == "bin":
+        return resolved.parent.parent
+    return None
+
+
+def _path_key(path: Path) -> str:
+    try:
+        resolved = path.resolve()
+    except OSError:
+        resolved = path.absolute()
+    return os.path.normcase(str(resolved))
+
+
+def _java_version_text(java: str) -> str:
+    try:
+        completed = subprocess.run(
+            [java, "-version"],
+            text=True,
+            capture_output=True,
+            timeout=5.0,
+            **_hidden_subprocess_kwargs(),
+        )
+    except Exception as exc:
+        return f"{type(exc).__name__}: {exc}"
+    return (completed.stderr or completed.stdout).strip()
+
+
+def _java_major_version(java: str) -> int | None:
+    text = _java_version_text(java)
+    return _parse_java_major_version(text)
+
+
+def _parse_java_major_version(version_text: str) -> int | None:
+    import re
+
+    match = re.search(r'version\s+"([^"]+)"', version_text)
+    if not match:
+        match = re.search(r"openjdk\s+([^\s]+)", version_text, flags=re.IGNORECASE)
+    if not match:
+        return None
+    version = match.group(1)
+    if version.startswith("1."):
+        parts = version.split(".")
+        return int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
+    major_match = re.match(r"(\d+)", version)
+    return int(major_match.group(1)) if major_match else None
+
+
+def _java_supports_jdk_attach(java: str) -> bool:
+    try:
+        completed = subprocess.run(
+            [java, "--list-modules"],
+            text=True,
+            capture_output=True,
+            timeout=8.0,
+            **_hidden_subprocess_kwargs(),
+        )
+    except Exception:
+        return False
+    if completed.returncode != 0:
+        return False
+    return any(line.startswith("jdk.attach") for line in completed.stdout.splitlines())
 
 
 def _project_root(project_root: Path | str | None = None) -> Path:
