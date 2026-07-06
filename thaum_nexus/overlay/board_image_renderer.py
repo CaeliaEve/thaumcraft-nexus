@@ -33,7 +33,7 @@ class BoardImageRenderer:
         if solution is not None:
             coords.update(solution.placements)
         if not coords:
-            return Image.new("RGBA", (640, 360), (13, 17, 23, 255))
+            return Image.new("RGBA", (640, 360), (5, 5, 5, 255))
 
         raw_positions = {coord: self._axial_to_raw(coord) for coord in coords}
         min_x = min(x for x, _y in raw_positions.values())
@@ -43,7 +43,7 @@ class BoardImageRenderer:
 
         width = int(round(max_x - min_x + self.margin * 2 + self.hex_size * 2))
         height = int(round(max_y - min_y + self.margin * 2 + self.hex_size * 2))
-        image = Image.new("RGBA", (max(520, width), max(340, height)), (13, 17, 23, 255))
+        image = Image.new("RGBA", (max(520, width), max(340, height)), (5, 5, 5, 255))
         draw = ImageDraw.Draw(image, "RGBA")
         font = ImageFont.load_default()
 
@@ -59,25 +59,28 @@ class BoardImageRenderer:
             for path in solution.paths:
                 points = [positions[coord] for coord in path.coords if coord in positions]
                 if len(points) >= 2:
-                    draw.line(points, fill=(46, 160, 67, 130), width=4)
+                    draw.line(points, fill=(245, 245, 245, 140), width=4)
 
         for coord in sorted(board.cells):
             cell = board.cells[coord]
             center = positions[coord]
             is_solution_cell = solution is not None and coord in solution.placements
-            fill = (32, 36, 43, 235)
-            outline = (88, 96, 105, 220)
+            fill = (18, 18, 18, 235)
+            outline = (42, 42, 42, 220)
+            outline_width = 2
             if cell.kind is CellKind.ROOT:
-                outline = (255, 123, 114, 255)
-                fill = (52, 38, 41, 245)
+                outline = (245, 245, 245, 255)
+                fill = (46, 46, 46, 245)
+                outline_width = 3
             elif cell.kind is CellKind.PLACED:
-                outline = (121, 192, 255, 245)
-                fill = (31, 48, 61, 245)
+                outline = (170, 170, 170, 245)
+                fill = (22, 22, 22, 245)
             elif is_solution_cell:
-                outline = (63, 185, 80, 255)
-                fill = (30, 57, 37, 245)
-            draw.polygon(self._hex_points(center), fill=fill, outline=outline)
-            draw.line(self._hex_points(center) + [self._hex_points(center)[0]], fill=outline, width=2)
+                outline = (220, 220, 220, 255)
+                fill = (34, 34, 34, 245)
+            points = self._hex_points(center)
+            draw.polygon(points, fill=fill, outline=outline)
+            draw.line(points + [points[0]], fill=outline, width=outline_width)
 
         # Draw icons after cells so they stay crisp.
         for coord in sorted(board.cells):
@@ -97,14 +100,14 @@ class BoardImageRenderer:
                     (bbox[0] - 4, bbox[1] - 3, bbox[2] + 4, bbox[3] + 3),
                     radius=4,
                     fill=(0, 0, 0, 185),
-                    outline=(63, 185, 80, 240),
+                    outline=(140, 140, 140, 220),
                 )
-                draw.text((x + 12, y - 26), label, fill=(240, 246, 252, 255), font=font)
+                draw.text((x + 12, y - 26), label, fill=(245, 245, 245, 255), font=font)
 
         title = board.name or "Thaumcraft research note"
         if solution is not None:
             title += f"  ·  placements: {len(solution.placements)}"
-        draw.text((18, 16), title, fill=(201, 209, 217, 255), font=font)
+        draw.text((18, 16), title, fill=(124, 124, 124, 255), font=font)
         return image
 
     def save(self, board: BoardState, solution: Solution | None, output: Path) -> None:

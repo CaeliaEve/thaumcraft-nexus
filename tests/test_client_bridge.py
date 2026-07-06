@@ -188,6 +188,7 @@ class ClientBridgeTests(unittest.TestCase):
         self.assertEqual(client_bridge._parse_java_major_version('openjdk version "21.0.5" 2024-10-15'), 21)
         self.assertEqual(client_bridge._parse_java_major_version('openjdk version "25" 2025-09-16'), 25)
         self.assertEqual(client_bridge._parse_java_major_version('openjdk version "25-ea" 2025-09-16'), 25)
+        self.assertIsNone(client_bridge._parse_java_major_version("OpenJDK 64-Bit Server VM warning: INFO"))
 
     def test_attacher_command_uses_tools_jar_for_java8(self):
         runtime = client_bridge.JavaRuntime(
@@ -206,6 +207,8 @@ class ClientBridgeTests(unittest.TestCase):
         )
 
         self.assertNotIn("--add-modules", cmd)
+        self.assertIn("-Xms16m", cmd)
+        self.assertIn("-Xmx128m", cmd)
         self.assertIn("tools.jar", cmd[cmd.index("-cp") + 1])
         self.assertEqual(cmd[-1], "123")
 
@@ -224,6 +227,8 @@ class ClientBridgeTests(unittest.TestCase):
             pid="456",
         )
 
+        self.assertIn("-Xms16m", cmd)
+        self.assertIn("-Xmx128m", cmd)
         self.assertIn("--add-modules", cmd)
         self.assertIn("jdk.attach", cmd)
         self.assertEqual(cmd[cmd.index("-cp") + 1], "agent.jar")

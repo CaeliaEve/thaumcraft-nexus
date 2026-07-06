@@ -68,7 +68,10 @@ class ThaumNexusGui:
         self.target_pid = ""
 
         self.photo = None
-        self.github_icon_photo = None
+        self.github_normal_photo = None
+        self.github_hover_photo = None
+        self.canvas_refresh_job = None
+        self.canvas_image_cache_key: tuple[int, int, int] | None = None
         self.rendered = None
         self.solution_payload: dict[str, Any] | None = None
         self.solution_image_path: Path | None = None
@@ -102,19 +105,113 @@ class ThaumNexusGui:
             style.theme_use("clam")
         except Exception:
             pass
-        style.configure(".", font=("Segoe UI", 10))
-        style.configure("TFrame", background="#151922")
-        style.configure("Panel.TFrame", background="#1f2530")
-        style.configure("Card.TFrame", background="#111722")
-        style.configure("Title.TLabel", background="#1f2530", foreground="#f4f7fb", font=("Segoe UI", 16, "bold"))
-        style.configure("Subtitle.TLabel", background="#1f2530", foreground="#9aa7b6")
-        style.configure("Muted.TLabel", background="#1f2530", foreground="#a8b3c2")
-        style.configure("Link.TLabel", background="#1f2530", foreground="#79b8ff", font=("Segoe UI", 10, "bold"))
-        style.configure("Status.TLabel", background="#151922", foreground="#d7dee8")
-        style.configure("TButton", padding=(11, 7))
-        style.configure("Primary.TButton", padding=(11, 8))
-        style.configure("Danger.TButton", padding=(11, 8), foreground="#ffbec7")
-        style.configure("Horizontal.TProgressbar", troughcolor="#111722", background="#6aa6ff")
+
+        # Configure overall option database for dropdown listboxes to match our dark theme
+        self.tk.option_add("*TCombobox*Listbox.background", "#1C1C1C")
+        self.tk.option_add("*TCombobox*Listbox.foreground", "#F5F5F5")
+        self.tk.option_add("*TCombobox*Listbox.selectBackground", "#E0E0E0")
+        self.tk.option_add("*TCombobox*Listbox.selectForeground", "#080808")
+        self.tk.option_add("*TCombobox*Listbox.font", ("Segoe UI", 10))
+
+        style.configure(".", font=("Segoe UI", 10), foreground="#F5F5F5")
+        style.configure("TFrame", background="#080808")
+        style.configure("Panel.TFrame", background="#121212")
+        style.configure("Card.TFrame", background="#1C1C1C", borderwidth=1, relief="solid", bordercolor="#2A2A2A")
+        style.configure("Divider.TFrame", background="#2A2A2A")
+        # Labels style configuration.
+        style.configure("AppTitle.TLabel", background="#121212", foreground="#F5F5F5", font=("Monotype Corsiva", 26, "italic", "bold"))
+        style.configure("AppSubtitle.TLabel", background="#121212", foreground="#7C7C7C", font=("Monotype Corsiva", 18, "italic", "bold"))
+        style.configure("SectionTitle.TLabel", background="#121212", foreground="#F5F5F5", font=("Segoe UI", 11, "bold"))
+        style.configure("Muted.TLabel", background="#121212", foreground="#7C7C7C")
+        style.configure("Link.TLabel", background="#121212", foreground="#E0E0E0", font=("Georgia", 10, "bold"))
+        style.configure("Status.TLabel", background="#080808", foreground="#CCCCCC")
+
+        # Card Specific Labels (inside the stats container)
+        style.configure("Card.TLabel", background="#1C1C1C", foreground="#F5F5F5", font=("Segoe UI", 10))
+        style.configure("CardMuted.TLabel", background="#1C1C1C", foreground="#7C7C7C", font=("Segoe UI", 10))
+
+        # Standard Button (Matte Dark Charcoal)
+        style.configure("TButton",
+                        background="#161616",
+                        foreground="#F5F5F5",
+                        bordercolor="#2A2A2A",
+                        darkcolor="#161616",
+                        lightcolor="#161616",
+                        focuscolor="#E0E0E0",
+                        borderwidth=1,
+                        padding=(12, 8),
+                        font=("Segoe UI", 10, "bold"))
+        style.map("TButton",
+                  background=[("active", "#262626"), ("disabled", "#080808")],
+                  foreground=[("disabled", "#7C7C7C")],
+                  bordercolor=[("active", "#404040"), ("disabled", "#2A2A2A")])
+
+        # Primary Button (Stark White Block)
+        style.configure("Primary.TButton",
+                        background="#E0E0E0",
+                        foreground="#080808",
+                        bordercolor="#E0E0E0",
+                        darkcolor="#E0E0E0",
+                        lightcolor="#E0E0E0",
+                        focuscolor="#FFFFFF",
+                        borderwidth=1,
+                        padding=(12, 8),
+                        font=("Segoe UI", 10, "bold"))
+        style.map("Primary.TButton",
+                  background=[("active", "#FFFFFF"), ("disabled", "#1C1C1C")],
+                  foreground=[("disabled", "#7C7C7C")],
+                  bordercolor=[("active", "#FFFFFF"), ("disabled", "#2A2A2A")])
+
+        # Danger Button (Slate Grey Warning)
+        style.configure("Danger.TButton",
+                        background="#1C1C1C",
+                        foreground="#F5F5F5",
+                        bordercolor="#7C7C7C",
+                        darkcolor="#1C1C1C",
+                        lightcolor="#1C1C1C",
+                        focuscolor="#FFFFFF",
+                        borderwidth=1,
+                        padding=(12, 8),
+                        font=("Segoe UI", 10, "bold"))
+        style.map("Danger.TButton",
+                  background=[("active", "#2A2A2A"), ("disabled", "#1C1C1C")],
+                  foreground=[("disabled", "#7C7C7C")],
+                  bordercolor=[("active", "#E0E0E0"), ("disabled", "#2A2A2A")])
+
+        # Combobox
+        style.configure("TCombobox",
+                        fieldbackground="#1C1C1C",
+                        background="#121212",
+                        foreground="#F5F5F5",
+                        bordercolor="#2A2A2A",
+                        darkcolor="#1C1C1C",
+                        lightcolor="#1C1C1C",
+                        arrowcolor="#7C7C7C",
+                        arrowsize=12,
+                        padding=5)
+        style.map("TCombobox",
+                  fieldbackground=[("readonly", "#1C1C1C"), ("active", "#262626")],
+                  bordercolor=[("focus", "#E0E0E0"), ("active", "#2A2A2A")])
+
+        # Entry
+        style.configure("TEntry",
+                        fieldbackground="#1C1C1C",
+                        foreground="#F5F5F5",
+                        bordercolor="#2A2A2A",
+                        lightcolor="#1C1C1C",
+                        darkcolor="#1C1C1C",
+                        padding=6)
+        style.map("TEntry",
+                  bordercolor=[("focus", "#E0E0E0"), ("active", "#2A2A2A")])
+
+        # Progressbar (Grayscale Mana bar)
+        style.configure("Horizontal.TProgressbar",
+                        troughcolor="#1C1C1C",
+                        bordercolor="#2A2A2A",
+                        background="#E0E0E0",
+                        lightcolor="#E0E0E0",
+                        darkcolor="#E0E0E0",
+                        thickness=6)
 
     def _build_layout(self, tk, ttk) -> None:
         assert self.tk is not None
@@ -125,7 +222,10 @@ class ThaumNexusGui:
         side.pack(side="left", fill="y")
         side.pack_propagate(False)
 
-        ttk.Label(side, text="Thaumcraft Nexus", style="Title.TLabel").pack(anchor="w", padx=20, pady=(20, 18))
+        title_frame = ttk.Frame(side, style="Panel.TFrame")
+        title_frame.pack(anchor="w", padx=20, pady=(24, 18))
+        ttk.Label(title_frame, text="Thaumcraft", style="AppTitle.TLabel").pack(side="left")
+        ttk.Label(title_frame, text="Nexus", style="AppSubtitle.TLabel").pack(side="left", padx=(6, 0), pady=(4, 0))
 
         self.buttons["read"] = self._button(side, self._button_text("read"), self._read_current_note, style="Primary.TButton")
         self.buttons["read"].pack(fill="x", padx=20, pady=(0, 9))
@@ -161,9 +261,10 @@ class ThaumNexusGui:
 
         canvas_card = ttk.Frame(main, style="Card.TFrame")
         canvas_card.pack(fill="both", expand=True, padx=14, pady=(14, 8))
-        self.canvas = tk.Canvas(canvas_card, bg="#0d1117", highlightthickness=0)
+        self.canvas = tk.Canvas(canvas_card, bg="#050505", highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
-        self.canvas.create_text(28, 28, text="\u7b49\u5f85\u8bfb\u53d6\u7814\u7a76\u7b14\u8bb0", fill="#7d8794", anchor="nw", font=("Segoe UI", 14))
+        self.canvas.create_text(28, 28, text="\u7b49\u5f85\u8bfb\u53d6\u7814\u7a76\u7b14\u8bb0", fill="#7C7C7C", anchor="nw", font=("Segoe UI", 14))
+        self.canvas.bind("<Configure>", lambda _event: self._schedule_canvas_refresh())
 
         bottom = ttk.Frame(main, style="TFrame")
         bottom.pack(fill="x", padx=14, pady=(0, 12))
@@ -172,14 +273,14 @@ class ThaumNexusGui:
         self.log_text = tk.Text(
             bottom,
             height=6,
-            bg="#0d1117",
-            fg="#c9d1d9",
-            insertbackground="#c9d1d9",
+            bg="#050505",
+            fg="#CCCCCC",
+            insertbackground="#CCCCCC",
             relief="flat",
             highlightthickness=1,
-            highlightbackground="#303844",
+            highlightbackground="#2A2A2A",
             wrap="word",
-            font=("Consolas", 9),
+            font=("Consolas", 10),
         )
         self.log_text.pack(fill="x")
         self.log_text.configure(state="disabled")
@@ -196,26 +297,39 @@ class ThaumNexusGui:
         footer.pack(side="bottom", fill="x", padx=20, pady=(0, 18))
 
         icon_path = self.resource_root / GITHUB_ICON
-        icon = ttk.Label(footer, image=self._load_github_icon(icon_path), style="Muted.TLabel", cursor="hand2")
+        self.github_normal_photo = self._load_github_icon(icon_path, (124, 124, 124))
+        self.github_hover_photo = self._load_github_icon(icon_path, (245, 245, 245))
+
+        icon = tk.Label(footer, image=self.github_normal_photo, bg="#121212", bd=0, cursor="hand2")
         icon.pack(side="left")
 
-        label = ttk.Label(footer, text="GitHub", style="Link.TLabel", cursor="hand2")
+        label = tk.Label(footer, text="GitHub", fg="#7C7C7C", bg="#121212", font=("Georgia", 11, "italic", "bold"), bd=0, cursor="hand2")
         label.pack(side="left", padx=(8, 0))
 
+        def on_enter(_event) -> None:
+            icon.configure(image=self.github_hover_photo)
+            label.configure(fg="#F5F5F5")
+
+        def on_leave(_event) -> None:
+            icon.configure(image=self.github_normal_photo)
+            label.configure(fg="#7C7C7C")
+
         for widget in (footer, icon, label):
+            widget.bind("<Enter>", on_enter)
+            widget.bind("<Leave>", on_leave)
             widget.bind("<Button-1>", lambda _event: self._open_github())
 
     def _open_github(self) -> None:
         import webbrowser
-
         webbrowser.open_new_tab(GITHUB_URL)
 
-    def _load_github_icon(self, icon_path: Path):
+    def _load_github_icon(self, icon_path: Path, color: tuple[int, int, int]):
         from PIL import Image, ImageTk
-
-        icon = Image.open(icon_path).convert("RGBA").resize((24, 24), Image.Resampling.LANCZOS)
-        self.github_icon_photo = ImageTk.PhotoImage(icon)
-        return self.github_icon_photo
+        img = Image.open(icon_path).convert("RGBA")
+        solid = Image.new("RGBA", img.size, color + (255,))
+        tinted = Image.composite(solid, Image.new("RGBA", img.size, (0, 0, 0, 0)), img.split()[3])
+        tinted = tinted.resize((20, 20), Image.Resampling.LANCZOS)
+        return ImageTk.PhotoImage(tinted)
 
     def _button_text(self, action: str) -> str:
         shortcut = self._shortcut_display(self.shortcuts.get(action, ""))
@@ -384,7 +498,7 @@ class ThaumNexusGui:
 
         dialog = tk.Toplevel(self.tk)
         dialog.title("设置")
-        dialog.configure(bg="#1f2530")
+        dialog.configure(bg="#121212")
         dialog.resizable(False, False)
         dialog.transient(self.tk)
         dialog.grab_set()
@@ -392,7 +506,7 @@ class ThaumNexusGui:
         container = ttk.Frame(dialog, style="Panel.TFrame", padding=18)
         container.pack(fill="both", expand=True)
 
-        ttk.Label(container, text="快捷键设置", style="Title.TLabel").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 12))
+        ttk.Label(container, text="快捷键设置", style="SectionTitle.TLabel").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 12))
         hint = tk.StringVar(value="点击“重新绑定”，然后按下新的快捷键。")
         ttk.Label(container, textvariable=hint, style="Muted.TLabel").grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 12))
 
@@ -415,7 +529,7 @@ class ThaumNexusGui:
         speed_delay_var = tk.StringVar(value=str(speed_settings["delayMs"]))
         speed_verify_var = tk.StringVar(value=str(speed_settings["verifyDelayMs"]))
         row += 1
-        ttk.Label(container, text="摆放速度", style="Title.TLabel").grid(
+        ttk.Label(container, text="摆放速度", style="SectionTitle.TLabel").grid(
             row=row,
             column=0,
             columnspan=3,
@@ -460,7 +574,7 @@ class ThaumNexusGui:
         target_pid_var = tk.StringVar(value=self.target_pid)
         process_var = tk.StringVar()
         row += 1
-        ttk.Label(container, text="\u76ee\u6807 JVM \u8fdb\u7a0b\uff08\u4ec5\u672c\u6b21\u8fd0\u884c\uff09", style="Title.TLabel").grid(
+        ttk.Label(container, text="\u76ee\u6807 JVM \u8fdb\u7a0b\uff08\u4ec5\u672c\u6b21\u8fd0\u884c\uff09", style="SectionTitle.TLabel").grid(
             row=row,
             column=0,
             columnspan=3,
@@ -849,20 +963,43 @@ class ThaumNexusGui:
         from PIL import Image, ImageTk
 
         image = self.rendered
-        self.display_scale = self._display_scale(image)
-        display = image.resize(
-            (round(image.width * self.display_scale), round(image.height * self.display_scale)),
-            Image.Resampling.LANCZOS,
-        )
-        self.photo = ImageTk.PhotoImage(display)
-        self.canvas.delete("all")
-        self.canvas.configure(width=display.width, height=display.height)
-        self.canvas.create_image(0, 0, image=self.photo, anchor="nw")
+        canvas_w = self.canvas.winfo_width()
+        canvas_h = self.canvas.winfo_height()
+        if canvas_w <= 1:
+            canvas_w = 820
+        if canvas_h <= 1:
+            canvas_h = 560
 
-    def _display_scale(self, image) -> float:
-        max_width = 820
-        max_height = 560
-        return min(1.0, max_width / image.width, max_height / image.height)
+        max_w = max(1, canvas_w - 28)
+        max_h = max(1, canvas_h - 28)
+        self.display_scale = self._display_scale(image, max_w, max_h)
+        display_w = max(1, round(image.width * self.display_scale))
+        display_h = max(1, round(image.height * self.display_scale))
+        cache_key = (id(image), display_w, display_h)
+        if cache_key != self.canvas_image_cache_key or self.photo is None:
+            display = image.resize((display_w, display_h), Image.Resampling.LANCZOS)
+            self.photo = ImageTk.PhotoImage(display)
+            self.canvas_image_cache_key = cache_key
+        self.canvas.delete("all")
+        self.canvas.create_image(canvas_w // 2, canvas_h // 2, image=self.photo, anchor="center")
+
+    def _display_scale(self, image, max_w: int, max_h: int) -> float:
+        return min(1.0, max(1, max_w) / image.width, max(1, max_h) / image.height)
+
+    def _schedule_canvas_refresh(self) -> None:
+        if self.tk is None:
+            self._refresh_canvas_image()
+            return
+        if self.canvas_refresh_job is not None:
+            try:
+                self.tk.after_cancel(self.canvas_refresh_job)
+            except Exception:
+                pass
+        self.canvas_refresh_job = self.tk.after(80, self._run_scheduled_canvas_refresh)
+
+    def _run_scheduled_canvas_refresh(self) -> None:
+        self.canvas_refresh_job = None
+        self._refresh_canvas_image()
 
     def _write_runtime_json(self, name: str, payload: dict[str, Any]) -> Path:
         out_dir = self.runtime_root

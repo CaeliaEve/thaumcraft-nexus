@@ -17,6 +17,9 @@ from .resources import ResourcePlan, plan_resource_usage
 from .solver import SearchConfig, solve
 
 
+JAVA_HELPER_MEMORY_FLAGS = ["-Xms16m", "-Xmx128m"]
+
+
 class OperationCancelled(RuntimeError):
     """Raised when a GUI/user cancellation request stops an in-flight operation."""
 
@@ -1062,7 +1065,7 @@ def _build_attacher_command(
     pid: str | int | None,
 ) -> list[str]:
     classpath_parts = [str(agent_jar)]
-    cmd = [runtime.java]
+    cmd = [runtime.java, *JAVA_HELPER_MEMORY_FLAGS]
     if runtime.major is not None and runtime.major >= 9:
         cmd += ["--add-modules", "jdk.attach"]
     elif runtime.tools_jar is not None:
@@ -1485,7 +1488,7 @@ def _path_key(path: Path) -> str:
 def _java_version_text(java: str) -> str:
     try:
         completed = subprocess.run(
-            [java, "-version"],
+            [java, *JAVA_HELPER_MEMORY_FLAGS, "-version"],
             text=True,
             capture_output=True,
             timeout=5.0,
@@ -1506,7 +1509,7 @@ def _parse_java_major_version(version_text: str) -> int | None:
 
     match = re.search(r'version\s+"([^"]+)"', version_text)
     if not match:
-        match = re.search(r"openjdk\s+([^\s]+)", version_text, flags=re.IGNORECASE)
+        match = re.search(r"openjdk\s+version\s+([^\s]+)", version_text, flags=re.IGNORECASE)
     if not match:
         return None
     version = match.group(1)
@@ -1520,7 +1523,7 @@ def _parse_java_major_version(version_text: str) -> int | None:
 def _java_supports_jdk_attach(java: str) -> bool:
     try:
         completed = subprocess.run(
-            [java, "--list-modules"],
+            [java, *JAVA_HELPER_MEMORY_FLAGS, "--list-modules"],
             text=True,
             capture_output=True,
             timeout=8.0,
