@@ -19,6 +19,15 @@ DEFAULT_SHORTCUTS = {
     "wheelchair": "<F7>",
     "save": "<Control-s>",
 }
+DEFAULT_PLACEMENT_SPEED_PRESET = "balanced"
+PLACEMENT_SPEED_PRESET_ORDER = ("stable", "balanced", "fast", "turbo", "custom")
+PLACEMENT_SPEED_PRESETS = {
+    "stable": {"label": "稳定", "delayMs": 120, "verifyDelayMs": 800},
+    "balanced": {"label": "标准", "delayMs": 80, "verifyDelayMs": 500},
+    "fast": {"label": "快速", "delayMs": 50, "verifyDelayMs": 300},
+    "turbo": {"label": "极速", "delayMs": 30, "verifyDelayMs": 200},
+    "custom": {"label": "自定义", "delayMs": 80, "verifyDelayMs": 500},
+}
 ACTION_LABELS = {
     "read": "读取当前笔记",
     "apply": "读取并自动放置",
@@ -52,6 +61,7 @@ class ThaumNexusGui:
         self.stop_button = None
         self.shortcut_bindings: list[str] = []
         self.shortcuts = self._load_shortcuts()
+        self.placement_speed = self._load_placement_speed()
         # A JVM PID is process-lifetime state: it changes every time the game restarts.
         # Keep manual PID selection for the current GUI session only, and never
         # resurrect a stale PID from gui_settings.json.
@@ -236,6 +246,61 @@ class ThaumNexusGui:
                 shortcuts[action] = value
         return shortcuts
 
+    def _load_placement_speed(self) -> dict[str, int | str]:
+        payload = self._load_settings_payload()
+        saved = payload.get("placementSpeed") if isinstance(payload, dict) else None
+        return self._normalize_placement_speed(saved)
+
+    def _normalize_placement_speed(self, payload: Any) -> dict[str, int | str]:
+        default = PLACEMENT_SPEED_PRESETS[DEFAULT_PLACEMENT_SPEED_PRESET]
+        preset = DEFAULT_PLACEMENT_SPEED_PRESET
+        delay_ms = int(default["delayMs"])
+        verify_delay_ms = int(default["verifyDelayMs"])
+
+        if isinstance(payload, dict):
+            raw_preset = payload.get("preset")
+            if isinstance(raw_preset, str) and raw_preset in PLACEMENT_SPEED_PRESETS:
+                preset = raw_preset
+            if preset == "custom":
+                delay_ms = self._coerce_speed_ms(payload.get("delayMs"), delay_ms)
+                verify_delay_ms = self._coerce_speed_ms(payload.get("verifyDelayMs"), verify_delay_ms)
+            else:
+                selected = PLACEMENT_SPEED_PRESETS[preset]
+                delay_ms = int(selected["delayMs"])
+                verify_delay_ms = int(selected["verifyDelayMs"])
+
+        return {"preset": preset, "delayMs": delay_ms, "verifyDelayMs": verify_delay_ms}
+
+    def _coerce_speed_ms(self, value: Any, fallback: int) -> int:
+        try:
+            number = int(str(value).strip())
+        except (TypeError, ValueError):
+            return fallback
+        return max(0, min(5000, number))
+
+    def _placement_speed_values(self) -> tuple[int, int]:
+        speed = self._normalize_placement_speed(self.placement_speed)
+        self.placement_speed = speed
+        return int(speed["delayMs"]), int(speed["verifyDelayMs"])
+
+    def _placement_speed_summary(self) -> str:
+        speed = self._normalize_placement_speed(self.placement_speed)
+        preset = str(speed["preset"])
+        label = str(PLACEMENT_SPEED_PRESETS.get(preset, PLACEMENT_SPEED_PRESETS["custom"])["label"])
+        return f"{label}（间隔 {int(speed['delayMs'])}ms，完成等待 {int(speed['verifyDelayMs'])}ms）"
+
+    def _speed_preset_display(self, preset: str) -> str:
+        config = PLACEMENT_SPEED_PRESETS[preset]
+        if preset == "custom":
+            return str(config["label"])
+        return f"{config['label']}（{config['delayMs']} / {config['verifyDelayMs']} ms）"
+
+    def _speed_preset_from_display(self, display: str) -> str:
+        for preset in PLACEMENT_SPEED_PRESET_ORDER:
+            if display == self._speed_preset_display(preset):
+                return preset
+        return "custom"
+
     def _load_target_pid(self) -> str:
         payload = self._load_settings_payload()
         value = payload.get("targetPid")
@@ -247,6 +312,7 @@ class ThaumNexusGui:
         payload = {
             "schema": "thaumcraft-nexus/gui-settings/v1",
             "shortcuts": {action: self.shortcuts[action] for action in ACTION_ORDER},
+            "placementSpeed": self._normalize_placement_speed(self.placement_speed),
             "targetPid": "",
         }
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -343,6 +409,53 @@ class ThaumNexusGui:
             ).grid(row=row, column=2, sticky="e", pady=5)
             row += 1
 
+        speed_settings = self._normalize_placement_speed(self.placement_speed)
+        speed_preset_values = [self._speed_preset_display(preset) for preset in PLACEMENT_SPEED_PRESET_ORDER]
+        speed_preset_var = tk.StringVar(value=self._speed_preset_display(str(speed_settings["preset"])))
+        speed_delay_var = tk.StringVar(value=str(speed_settings["delayMs"]))
+        speed_verify_var = tk.StringVar(value=str(speed_settings["verifyDelayMs"]))
+        row += 1
+        ttk.Label(container, text="摆放速度", style="Title.TLabel").grid(
+            row=row,
+            column=0,
+            columnspan=3,
+            sticky="w",
+            pady=(12, 8),
+        )
+        row += 1
+        ttk.Label(
+            container,
+            text="预设会同时调整每个要素之间的间隔和每张笔记完成后的等待；服务器较慢时请使用稳定预设。",
+            style="Muted.TLabel",
+        ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        row += 1
+        ttk.Label(container, text="预设", style="Muted.TLabel").grid(row=row, column=0, sticky="w", pady=5)
+        speed_combo = ttk.Combobox(container, textvariable=speed_preset_var, width=22, state="readonly", values=speed_preset_values)
+        speed_combo.grid(row=row, column=1, sticky="w", padx=(16, 12), pady=5)
+        row += 1
+        ttk.Label(container, text="要素间隔 ms", style="Muted.TLabel").grid(row=row, column=0, sticky="w", pady=5)
+        speed_delay_entry = ttk.Entry(container, textvariable=speed_delay_var, width=18)
+        speed_delay_entry.grid(row=row, column=1, sticky="w", padx=(16, 12), pady=5)
+        row += 1
+        ttk.Label(container, text="完成等待 ms", style="Muted.TLabel").grid(row=row, column=0, sticky="w", pady=5)
+        speed_verify_entry = ttk.Entry(container, textvariable=speed_verify_var, width=18)
+        speed_verify_entry.grid(row=row, column=1, sticky="w", padx=(16, 12), pady=5)
+
+        def apply_speed_preset(_event=None) -> None:
+            preset = self._speed_preset_from_display(speed_preset_var.get())
+            if preset == "custom":
+                return
+            config = PLACEMENT_SPEED_PRESETS[preset]
+            speed_delay_var.set(str(config["delayMs"]))
+            speed_verify_var.set(str(config["verifyDelayMs"]))
+            hint.set(f"已选择摆放速度：{config['label']}。")
+
+        def mark_custom_speed(_event=None) -> None:
+            speed_preset_var.set(self._speed_preset_display("custom"))
+
+        speed_combo.bind("<<ComboboxSelected>>", apply_speed_preset)
+        speed_delay_entry.bind("<KeyRelease>", mark_custom_speed)
+        speed_verify_entry.bind("<KeyRelease>", mark_custom_speed)
 
         target_pid_var = tk.StringVar(value=self.target_pid)
         process_var = tk.StringVar()
@@ -393,22 +506,46 @@ class ThaumNexusGui:
         process_combo.bind("<<ComboboxSelected>>", lambda _event: apply_selected_process())
         row += 1
 
+        def parse_speed_settings() -> dict[str, int | str] | None:
+            preset = self._speed_preset_from_display(speed_preset_var.get())
+            if preset != "custom":
+                config = PLACEMENT_SPEED_PRESETS[preset]
+                return {
+                    "preset": preset,
+                    "delayMs": int(config["delayMs"]),
+                    "verifyDelayMs": int(config["verifyDelayMs"]),
+                }
+            try:
+                delay_ms = int(speed_delay_var.get().strip())
+                verify_delay_ms = int(speed_verify_var.get().strip())
+            except ValueError:
+                hint.set("摆放速度只能填写数字；单位为毫秒。")
+                return None
+            if delay_ms < 0 or verify_delay_ms < 0 or delay_ms > 5000 or verify_delay_ms > 5000:
+                hint.set("摆放速度范围为 0 到 5000 毫秒。")
+                return None
+            return {"preset": "custom", "delayMs": delay_ms, "verifyDelayMs": verify_delay_ms}
+
         def save_settings() -> bool:
+            speed = parse_speed_settings()
+            if speed is None:
+                return False
             target = target_pid_var.get().strip()
             if target and not target.isdigit():
                 hint.set("PID \u53ea\u80fd\u662f\u6570\u5b57\uff1b\u7559\u7a7a\u8868\u793a\u81ea\u52a8\u68c0\u6d4b\u3002")
                 return False
             self.target_pid = target
+            self.placement_speed = speed
             self._save_settings()
             hint.set(
-                f"\u5df2\u4fdd\u5b58\u76ee\u6807 JVM\uff1a{self.target_pid}"
+                f"已保存摆放速度：{self._placement_speed_summary()}；目标 JVM：{self.target_pid}"
                 if self.target_pid
-                else "\u5df2\u4fdd\u5b58\uff1a\u76ee\u6807 JVM \u4f7f\u7528\u81ea\u52a8\u68c0\u6d4b\u3002"
+                else f"已保存摆放速度：{self._placement_speed_summary()}；目标 JVM 使用自动检测。"
             )
             self._append_log(
-                f"\u76ee\u6807 JVM PID\uff1a{self.target_pid}"
+                f"摆放速度：{self._placement_speed_summary()}；目标 JVM PID：{self.target_pid}"
                 if self.target_pid
-                else "\u76ee\u6807 JVM PID\uff1a\u81ea\u52a8\u68c0\u6d4b"
+                else f"摆放速度：{self._placement_speed_summary()}；目标 JVM PID：自动检测"
             )
             return True
 
@@ -487,7 +624,15 @@ class ThaumNexusGui:
             pid = self._bridge_pid()
             if pid:
                 emit("log", f"\u4f7f\u7528\u76ee\u6807 JVM PID\uff1a{pid}")
-            result = read_solve_and_apply_current_note(self.bridge_project_root, pid=pid, stop_event=stop_event)
+            delay_ms, verify_delay_ms = self._placement_speed_values()
+            emit("log", f"摆放速度：{self._placement_speed_summary()}")
+            result = read_solve_and_apply_current_note(
+                self.bridge_project_root,
+                pid=pid,
+                delay_ms=delay_ms,
+                verify_delay_ms=verify_delay_ms,
+                stop_event=stop_event,
+            )
             return {"kind": "apply", "result": result}
 
         self._start_worker("\u81ea\u52a8\u653e\u7f6e\u5f53\u524d\u7b14\u8bb0", task, cancellable=True)
@@ -507,10 +652,14 @@ class ThaumNexusGui:
             pid = self._bridge_pid()
             if pid:
                 emit("log", f"\u4f7f\u7528\u76ee\u6807 JVM PID\uff1a{pid}")
+            delay_ms, verify_delay_ms = self._placement_speed_values()
+            emit("log", f"摆放速度：{self._placement_speed_summary()}")
             payload = solve_all_inventory_notes(
                 self.bridge_project_root,
                 pid=pid,
                 apply=True,
+                delay_ms=delay_ms,
+                verify_delay_ms=verify_delay_ms,
                 stop_event=stop_event,
                 progress_callback=progress,
             )
