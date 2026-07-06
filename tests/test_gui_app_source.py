@@ -57,9 +57,24 @@ class GuiAppSourceTests(unittest.TestCase):
 
         self.assertIn("OperationCancelled", source)
         self.assertIn("read_and_solve_current_note(self.bridge_project_root, pid=pid, stop_event=stop_event)", source)
-        self.assertIn("read_solve_and_apply_current_note(self.bridge_project_root, pid=pid, stop_event=stop_event)", source)
+        self.assertIn("read_solve_and_apply_current_note(", source)
+        self.assertIn("solve_all_inventory_notes(", source)
+        self.assertIn("delay_ms=delay_ms", source)
+        self.assertIn("verify_delay_ms=verify_delay_ms", source)
         self.assertIn('self._start_worker("\\u8bfb\\u53d6\\u5f53\\u524d\\u7b14\\u8bb0", task, cancellable=True)', source)
         self.assertIn('self._start_worker("\\u81ea\\u52a8\\u653e\\u7f6e\\u5f53\\u524d\\u7b14\\u8bb0", task, cancellable=True)', source)
+
+    def test_gui_exposes_placement_speed_presets_and_custom_values(self):
+        source = GUI_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn("PLACEMENT_SPEED_PRESETS", source)
+        self.assertIn("DEFAULT_PLACEMENT_SPEED_PRESET", source)
+        self.assertIn('"placementSpeed"', source)
+        self.assertIn("摆放速度", source)
+        self.assertIn("自定义", source)
+        self.assertIn("_placement_speed_values", source)
+        self.assertIn("_placement_speed_summary", source)
+        self.assertIn("0 到 5000 毫秒", source)
 
     def test_gui_no_longer_imports_screenshot_vision_stack(self):
         source = GUI_SOURCE.read_text(encoding="utf-8")
