@@ -1,4 +1,6 @@
+import json
 import os
+import subprocess
 import sys
 import tempfile
 import threading
@@ -15,6 +17,258 @@ from thaum_nexus.resources import ResourcePlan, SynthesisStep
 
 
 class ClientBridgeTests(unittest.TestCase):
+    def test_solver_modes_select_inventory_or_minimal_costing(self):
+        inventory = client_bridge._search_config_for_mode("inventory", {"auram": 5})
+        optimal = client_bridge._search_config_for_mode("optimal", {"auram": 5})
+
+        self.assertIsNotNone(inventory)
+        self.assertEqual(inventory.aspect_inventory, {"auram": 5})
+        self.assertFalse(inventory.minimize_placements)
+        self.assertIsNotNone(optimal)
+        self.assertTrue(optimal.minimize_placements)
+        self.assertEqual(optimal.aspect_inventory, {"auram": 5})
+
+    def test_zero_inventory_is_preserved_for_resource_shortage_detection(self):
+        fixture = Path(__file__).parent / "fixtures" / "boards" / "two_roots_line.json"
+        payload = json.loads(fixture.read_text(encoding="utf-8"))
+        payload["aspects"] = {"available": {"aer": 0, "ignis": 0, "lux": 0}}
+
+        with mock.patch.object(
+            client_bridge,
+            "export_current_note",
+            return_value=(payload, Path("runtime/current_note.json"), "", ""),
+        ):
+            current = client_bridge.read_and_solve_current_note(Path("."))
+
+        self.assertIsNotNone(current.resource_plan)
+        self.assertFalse(current.resource_plan.is_sufficient)
+        self.assertEqual(current.resource_plan.shortages, {"aer": 1})
+
+    def test_missing_inventory_payload_remains_unknown(self):
+        self.assertIsNone(client_bridge.available_aspects_from_note_payload({}))
+
+    def test_default_apply_artifacts_are_unique_per_operation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first = apply_solution_to_current_note(
+                Solution(placements={}),
+                root,
+                build_if_needed=False,
+            )
+            second = apply_solution_to_current_note(
+                Solution(placements={}),
+                root,
+                build_if_needed=False,
+            )
+
+        self.assertNotEqual(first[1], second[1])
+        self.assertNotEqual(first[2], second[2])
+
+    def test_target_attach_lock_serializes_same_jvm(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first_entered = threading.Event()
+            release_first = threading.Event()
+            order: list[str] = []
+
+            def first() -> None:
+                with client_bridge._target_attach_lock(
+                    "4242",
+                    timeout=2.0,
+                    stop_event=None,
+                ):
+                    order.append("first")
+                    first_entered.set()
+                    release_first.wait(1.0)
+
+            def second() -> None:
+                first_entered.wait(1.0)
+                with client_bridge._target_attach_lock(
+                    "4242",
+                    timeout=2.0,
+                    stop_event=None,
+                ):
+                    order.append("second")
+
+            with mock.patch.object(client_bridge, "_global_attach_lock_root", return_value=root / "locks"):
+                first_thread = threading.Thread(target=first)
+                second_thread = threading.Thread(target=second)
+                first_thread.start()
+                second_thread.start()
+                self.assertTrue(first_entered.wait(1.0))
+                time.sleep(0.10)
+                self.assertEqual(order, ["first"])
+                release_first.set()
+                first_thread.join(2.0)
+                second_thread.join(2.0)
+
+        self.assertFalse(first_thread.is_alive())
+        self.assertFalse(second_thread.is_alive())
+        self.assertEqual(order, ["first", "second"])
+
+    def test_target_attach_lock_is_reentrant_for_high_level_transactions(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
+            client_bridge,
+            "_global_attach_lock_root",
+            return_value=Path(tmp) / "locks",
+        ):
+            with client_bridge._target_attach_lock("4242", timeout=2.0, stop_event=None):
+                with client_bridge._target_attach_lock("4242", timeout=2.0, stop_event=None):
+                    self.assertTrue(True)
+
+    def test_reentrant_target_lock_rejects_new_work_after_unsafe_marker(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
+            client_bridge,
+            "_global_attach_lock_root",
+            return_value=Path(tmp) / "locks",
+        ):
+            with client_bridge._target_attach_lock("4242", timeout=2.0, stop_event=None):
+                marker = client_bridge._unsafe_marker_path("4242")
+                marker.write_text("unsafe\n", encoding="utf-8")
+                with self.assertRaises(client_bridge.UnsafeAgentStateError):
+                    with client_bridge._target_attach_lock("4242", timeout=2.0, stop_event=None):
+                        self.fail("unsafe reentrant work should not start")
+
+    def test_unsafe_jvm_marker_blocks_follow_up_operations(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(
+            client_bridge,
+            "_global_attach_lock_root",
+            return_value=Path(tmp) / "locks",
+        ), mock.patch.object(client_bridge, "_pid_is_running", return_value=True):
+            marker = client_bridge._unsafe_marker_path("4242")
+            marker.parent.mkdir(parents=True)
+            marker.write_text("unsafe\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(RuntimeError, "restart JVM 4242"):
+                with client_bridge._target_attach_lock("4242", timeout=2.0, stop_event=None):
+                    self.fail("unsafe JVM lock should not be entered")
+
+    def test_timeout_requests_agent_cancellation_before_returning(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            cancel = root / "cancel.flag"
+            unsafe = root / "unsafe.flag"
+            command = [
+                sys.executable,
+                "-c",
+                (
+                    "import pathlib,sys,time; "
+                    "p=pathlib.Path(sys.argv[1]); "
+                    "deadline=time.monotonic()+5; "
+                    "exec('while not p.exists() and time.monotonic() < deadline:\\n time.sleep(0.01)')"
+                ),
+                str(cancel),
+            ]
+
+            with self.assertRaises(subprocess.TimeoutExpired):
+                client_bridge._run_cancellable_subprocess(
+                    command,
+                    cwd=str(root),
+                    timeout=0.10,
+                    cancel_path=cancel,
+                    unsafe_marker=unsafe,
+                )
+            self.assertTrue(cancel.exists())
+            self.assertFalse(unsafe.exists())
+
+    def test_read_solve_apply_holds_one_target_transaction_lock(self):
+        active = {"value": False}
+        lock = mock.MagicMock()
+        lock.__enter__.side_effect = lambda: active.__setitem__("value", True)
+        lock.__exit__.side_effect = lambda *_args: active.__setitem__("value", False)
+        current = client_bridge.CurrentNoteResult(
+            note=SimpleNamespace(complete=False, research_key="A", board=SimpleNamespace(name="A")),
+            solution=Solution(placements={}),
+            note_json_path=Path("runtime/current.json"),
+        )
+
+        def read_current(*_args, **kwargs):
+            self.assertTrue(active["value"])
+            self.assertEqual(kwargs["pid"], "4242")
+            return current
+
+        def apply_current(*_args, **kwargs):
+            self.assertTrue(active["value"])
+            self.assertEqual(kwargs["pid"], "4242")
+            return ({"status": "ok"}, Path("plan.json"), Path("result.json"), "", "")
+
+        with mock.patch.object(client_bridge, "_resolve_target_pid", return_value="4242"), mock.patch.object(
+            client_bridge,
+            "_target_attach_lock",
+            return_value=lock,
+        ), mock.patch.object(client_bridge, "read_and_solve_current_note", side_effect=read_current), mock.patch.object(
+            client_bridge,
+            "apply_solution_to_current_note",
+            side_effect=apply_current,
+        ):
+            result = client_bridge.read_solve_and_apply_current_note(Path("."))
+
+        self.assertIs(result.current, current)
+        self.assertFalse(active["value"])
+
+    def test_wheelchair_holds_one_target_transaction_lock(self):
+        active = {"value": False}
+        lock = mock.MagicMock()
+        lock.__enter__.side_effect = lambda: active.__setitem__("value", True)
+        lock.__exit__.side_effect = lambda *_args: active.__setitem__("value", False)
+
+        def run_locked(*_args, **kwargs):
+            self.assertTrue(active["value"])
+            self.assertEqual(kwargs["pid"], "4242")
+            return {"status": "ok"}
+
+        with mock.patch.object(client_bridge, "_resolve_target_pid", return_value="4242"), mock.patch.object(
+            client_bridge,
+            "_target_attach_lock",
+            return_value=lock,
+        ), mock.patch.object(client_bridge, "_solve_all_inventory_notes_locked", side_effect=run_locked):
+            payload = client_bridge.solve_all_inventory_notes(Path("."), apply=True)
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertFalse(active["value"])
+
+    def test_wheelchair_stops_after_unsafe_agent_state(self):
+        current = client_bridge.CurrentNoteResult(
+            note=SimpleNamespace(complete=False, research_key="A", board=SimpleNamespace(name="A")),
+            solution=Solution(placements={HexCoord(0, 0): "aer"}),
+            note_json_path=Path("runtime/current.json"),
+        )
+        inventory = {
+            "notes": [
+                {
+                    "slot": 1,
+                    "slotKind": "table-note",
+                    "researchKey": "A",
+                    "complete": False,
+                }
+            ]
+        }
+
+        with mock.patch.object(
+            client_bridge,
+            "export_inventory_notes",
+            return_value=(inventory, Path("inventory.json"), "", ""),
+        ) as export_inventory, mock.patch.object(
+            client_bridge,
+            "read_and_solve_current_note",
+            return_value=current,
+        ) as read_current, mock.patch.object(
+            client_bridge,
+            "apply_solution_to_current_note",
+            side_effect=client_bridge.UnsafeAgentStateError("restart JVM"),
+        ) as apply_current:
+            payload = client_bridge._solve_all_inventory_notes_locked(
+                Path("."),
+                pid="4242",
+                apply=True,
+                max_notes=3,
+            )
+
+        self.assertEqual(payload["status"], "error")
+        self.assertEqual(export_inventory.call_count, 1)
+        self.assertEqual(read_current.call_count, 1)
+        self.assertEqual(apply_current.call_count, 1)
+
     def test_java_attacher_recognizes_prism_launcher_entrypoint(self):
         source = (
             Path(__file__).resolve().parents[1]
@@ -65,6 +319,27 @@ class ClientBridgeTests(unittest.TestCase):
         self.assertIn("sleepCancelled", source)
         self.assertIn("isCancelRequested(plan)", source)
         self.assertIn('"cancelled"', source)
+
+    def test_java_agent_waits_for_each_synthesized_intermediate(self):
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "java-agent"
+            / "src"
+            / "main"
+            / "java"
+            / "thaumnexus"
+            / "agent"
+            / "ThaumNexusAgentV3.java"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("waitForAspectIncrease", source)
+        self.assertIn("synthesis-confirmation-timeout", source)
+        self.assertIn("remainingAspects.clear();", source)
+        self.assertIn('"incomplete-apply:', source)
+        self.assertIn("placementVerificationFailure", source)
+        self.assertIn('"placement-confirmation-failed:', source)
+        self.assertIn('"confirmed"', source)
+        self.assertNotIn("addAspectAmount(player, tile, output, remainingAspects);", source)
 
     def test_solution_to_apply_plan_is_java_agent_friendly(self):
         solution = Solution(
@@ -138,8 +413,10 @@ class ClientBridgeTests(unittest.TestCase):
         self.assertEqual(payload["placementsRequested"], 0)
         self.assertEqual(stdout, "")
         self.assertEqual(stderr, "")
-        self.assertTrue(plan.name.endswith("apply_plan.json"))
-        self.assertTrue(result.name.endswith("apply_result.json"))
+        self.assertTrue(plan.name.startswith("apply_plan_"))
+        self.assertTrue(plan.name.endswith(".json"))
+        self.assertTrue(result.name.startswith("apply_result_"))
+        self.assertTrue(result.name.endswith(".json"))
 
     def test_agent_jar_path_prefers_packaged_jar_layout(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -316,7 +593,7 @@ class ClientBridgeTests(unittest.TestCase):
                 "",
             ),
         ), mock.patch.object(client_bridge, "read_and_solve_current_note") as read_current:
-            payload = client_bridge.solve_all_inventory_notes(
+            payload = client_bridge._solve_all_inventory_notes_locked(
                 Path("."),
                 apply=True,
                 stop_event=stop_event,
@@ -381,7 +658,7 @@ class ClientBridgeTests(unittest.TestCase):
         ), mock.patch.object(client_bridge, "apply_solution_to_current_note", apply_current), mock.patch.object(
             client_bridge, "load_inventory_note_slot", load_note
         ):
-            payload = client_bridge.solve_all_inventory_notes(Path("."), apply=True)
+            payload = client_bridge._solve_all_inventory_notes_locked(Path("."), apply=True)
 
         self.assertEqual(payload["status"], "ok")
         self.assertEqual(payload["solvedOrAttempted"], 3)

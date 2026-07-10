@@ -6,6 +6,11 @@ import threading
 from pathlib import Path
 from typing import Any, Callable
 
+from .client_bridge import (
+    DEFAULT_SOLVER_MODE,
+    SOLVER_MODE_OPTIMAL,
+    normalize_solver_mode,
+)
 from .knowledge_base import KnowledgeBase
 from .overlay import BoardImageRenderer
 from .paths import app_root, resource_root, runtime_root
@@ -62,6 +67,7 @@ class ThaumNexusGui:
         self.shortcut_bindings: list[str] = []
         self.shortcuts = self._load_shortcuts()
         self.placement_speed = self._load_placement_speed()
+        self.solver_mode = self._load_solver_mode()
         # A JVM PID is process-lifetime state: it changes every time the game restarts.
         # Keep manual PID selection for the current GUI session only, and never
         # resurrect a stale PID from gui_settings.json.
@@ -203,6 +209,19 @@ class ThaumNexusGui:
                         padding=6)
         style.map("TEntry",
                   bordercolor=[("focus", "#E0E0E0"), ("active", "#2A2A2A")])
+
+        style.configure(
+            "TCheckbutton",
+            background="#121212",
+            foreground="#F5F5F5",
+            focuscolor="#121212",
+            font=("Segoe UI", 10),
+        )
+        style.map(
+            "TCheckbutton",
+            background=[("active", "#121212")],
+            foreground=[("disabled", "#7C7C7C")],
+        )
 
         # Progressbar (Grayscale Mana bar)
         style.configure("Horizontal.TProgressbar",
@@ -365,6 +384,15 @@ class ThaumNexusGui:
         saved = payload.get("placementSpeed") if isinstance(payload, dict) else None
         return self._normalize_placement_speed(saved)
 
+    def _load_solver_mode(self) -> str:
+        payload = self._load_settings_payload()
+        return normalize_solver_mode(payload.get("solverMode"))
+
+    def _solver_mode_summary(self) -> str:
+        if self.solver_mode == SOLVER_MODE_OPTIMAL:
+            return "最少要素优先（缺少时递归合成）"
+        return "库存优先（优先使用数量充足的现有要素）"
+
     def _normalize_placement_speed(self, payload: Any) -> dict[str, int | str]:
         default = PLACEMENT_SPEED_PRESETS[DEFAULT_PLACEMENT_SPEED_PRESET]
         preset = DEFAULT_PLACEMENT_SPEED_PRESET
@@ -427,6 +455,7 @@ class ThaumNexusGui:
             "schema": "thaumcraft-nexus/gui-settings/v1",
             "shortcuts": {action: self.shortcuts[action] for action in ACTION_ORDER},
             "placementSpeed": self._normalize_placement_speed(self.placement_speed),
+            "solverMode": normalize_solver_mode(self.solver_mode),
             "targetPid": "",
         }
         path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -571,6 +600,28 @@ class ThaumNexusGui:
         speed_delay_entry.bind("<KeyRelease>", mark_custom_speed)
         speed_verify_entry.bind("<KeyRelease>", mark_custom_speed)
 
+        optimal_mode_var = tk.BooleanVar(value=self.solver_mode == SOLVER_MODE_OPTIMAL)
+        row += 1
+        ttk.Label(container, text="求解策略", style="SectionTitle.TLabel").grid(
+            row=row,
+            column=0,
+            columnspan=3,
+            sticky="w",
+            pady=(12, 8),
+        )
+        row += 1
+        ttk.Checkbutton(
+            container,
+            text="最少要素优先",
+            variable=optimal_mode_var,
+        ).grid(row=row, column=0, columnspan=3, sticky="w", pady=5)
+        row += 1
+        ttk.Label(
+            container,
+            text="关闭时优先使用库存中数量充足的要素；开启后优先最少放置，缺少的复合要素会自动递归合成。",
+            style="Muted.TLabel",
+        ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 8))
+
         target_pid_var = tk.StringVar(value=self.target_pid)
         process_var = tk.StringVar()
         row += 1
@@ -650,16 +701,21 @@ class ThaumNexusGui:
                 return False
             self.target_pid = target
             self.placement_speed = speed
+            self.solver_mode = (
+                SOLVER_MODE_OPTIMAL
+                if optimal_mode_var.get()
+                else DEFAULT_SOLVER_MODE
+            )
             self._save_settings()
             hint.set(
-                f"已保存摆放速度：{self._placement_speed_summary()}；目标 JVM：{self.target_pid}"
+                f"已保存：{self._solver_mode_summary()}；摆放速度：{self._placement_speed_summary()}；目标 JVM：{self.target_pid}"
                 if self.target_pid
-                else f"已保存摆放速度：{self._placement_speed_summary()}；目标 JVM 使用自动检测。"
+                else f"已保存：{self._solver_mode_summary()}；摆放速度：{self._placement_speed_summary()}；目标 JVM 使用自动检测。"
             )
             self._append_log(
-                f"摆放速度：{self._placement_speed_summary()}；目标 JVM PID：{self.target_pid}"
+                f"求解策略：{self._solver_mode_summary()}；摆放速度：{self._placement_speed_summary()}；目标 JVM PID：{self.target_pid}"
                 if self.target_pid
-                else f"摆放速度：{self._placement_speed_summary()}；目标 JVM PID：自动检测"
+                else f"求解策略：{self._solver_mode_summary()}；摆放速度：{self._placement_speed_summary()}；目标 JVM PID：自动检测"
             )
             return True
 
@@ -721,7 +777,14 @@ class ThaumNexusGui:
             pid = self._bridge_pid()
             if pid:
                 emit("log", f"\u4f7f\u7528\u76ee\u6807 JVM PID\uff1a{pid}")
-            result = read_and_solve_current_note(self.bridge_project_root, pid=pid, stop_event=stop_event)
+            solve_mode = normalize_solver_mode(self.solver_mode)
+            emit("log", f"求解策略：{self._solver_mode_summary()}")
+            result = read_and_solve_current_note(
+                self.bridge_project_root,
+                pid=pid,
+                stop_event=stop_event,
+                solve_mode=solve_mode,
+            )
             return {"kind": "read", "result": result}
 
         self._start_worker("\u8bfb\u53d6\u5f53\u524d\u7b14\u8bb0", task, cancellable=True)
@@ -739,6 +802,8 @@ class ThaumNexusGui:
             if pid:
                 emit("log", f"\u4f7f\u7528\u76ee\u6807 JVM PID\uff1a{pid}")
             delay_ms, verify_delay_ms = self._placement_speed_values()
+            solve_mode = normalize_solver_mode(self.solver_mode)
+            emit("log", f"求解策略：{self._solver_mode_summary()}")
             emit("log", f"摆放速度：{self._placement_speed_summary()}")
             result = read_solve_and_apply_current_note(
                 self.bridge_project_root,
@@ -746,6 +811,7 @@ class ThaumNexusGui:
                 delay_ms=delay_ms,
                 verify_delay_ms=verify_delay_ms,
                 stop_event=stop_event,
+                solve_mode=solve_mode,
             )
             return {"kind": "apply", "result": result}
 
@@ -767,6 +833,8 @@ class ThaumNexusGui:
             if pid:
                 emit("log", f"\u4f7f\u7528\u76ee\u6807 JVM PID\uff1a{pid}")
             delay_ms, verify_delay_ms = self._placement_speed_values()
+            solve_mode = normalize_solver_mode(self.solver_mode)
+            emit("log", f"求解策略：{self._solver_mode_summary()}")
             emit("log", f"摆放速度：{self._placement_speed_summary()}")
             payload = solve_all_inventory_notes(
                 self.bridge_project_root,
@@ -776,6 +844,7 @@ class ThaumNexusGui:
                 verify_delay_ms=verify_delay_ms,
                 stop_event=stop_event,
                 progress_callback=progress,
+                solve_mode=solve_mode,
             )
             result_json = self._write_runtime_json("wheelchair_result.json", payload)
             return {"kind": "wheelchair", "payload": payload, "resultJson": result_json}

@@ -56,7 +56,7 @@ class GuiAppSourceTests(unittest.TestCase):
         source = GUI_SOURCE.read_text(encoding="utf-8")
 
         self.assertIn("OperationCancelled", source)
-        self.assertIn("read_and_solve_current_note(self.bridge_project_root, pid=pid, stop_event=stop_event)", source)
+        self.assertIn("read_and_solve_current_note(", source)
         self.assertIn("read_solve_and_apply_current_note(", source)
         self.assertIn("solve_all_inventory_notes(", source)
         self.assertIn("delay_ms=delay_ms", source)
@@ -75,6 +75,21 @@ class GuiAppSourceTests(unittest.TestCase):
         self.assertIn("_placement_speed_values", source)
         self.assertIn("_placement_speed_summary", source)
         self.assertIn("0 到 5000 毫秒", source)
+
+    def test_gui_exposes_optimal_solver_mode(self):
+        source = GUI_SOURCE.read_text(encoding="utf-8")
+
+        self.assertIn('"solverMode"', source)
+        self.assertIn("最少要素优先", source)
+        self.assertIn("_solver_mode_summary", source)
+        self.assertIn("solve_mode=solve_mode", source)
+
+    def test_documented_read_tool_exposes_solver_mode(self):
+        project_root = Path(__file__).resolve().parents[1]
+        source = (project_root / "tools" / "read_current_note.py").read_text(encoding="utf-8")
+
+        self.assertIn('"--solver-mode"', source)
+        self.assertGreaterEqual(source.count("solve_mode=args.solver_mode"), 2)
 
     def test_gui_no_longer_imports_screenshot_vision_stack(self):
         source = GUI_SOURCE.read_text(encoding="utf-8")

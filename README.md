@@ -39,7 +39,8 @@ Thaumcraft Nexus 是面向 **Thaumcraft 4 / GT New Horizons** 的外部桌面工
 | 结构化读取 | 直接从客户端读取研究笔记数据，不依赖截图识别。 |
 | 自动求解 | 基于 Thaumcraft 要素邻接规则计算合法连线路径。 |
 | 资源感知 | 读取玩家当前可用要素数量，并在求解时优先使用更充足的要素。 |
-| 要素合成 | 在要素不足时，根据合成关系生成并执行合成步骤。 |
+| 最优路径模式 | 在搜索预算内比较多种连接顺序与候选路径，以总放置数量为首要目标；库存仅作为候选搜索提示。 |
+| 要素合成 | 在要素不足时，递归生成并执行多阶合成链。 |
 | 自动放置 | 将求解结果发送至当前研究台，完成要素放置。 |
 | 批量处理 | 连续处理研究台和背包中的未完成研究笔记。 |
 | 答案预览 | 生成结构化答案预览图，便于检查求解路径。 |
@@ -105,7 +106,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\java-agent\build_agent.ps1
 | 读取并自动放置 | 读取、求解，并将结果应用到当前研究台。 |
 | 轮椅模式：解完背包笔记 | 批量处理研究台和背包中的未完成笔记。 |
 | 保存答案图 | 保存当前答案预览图片。 |
-| 设置 | 选择 JVM 进程、填写 PID、配置快捷键和摆放速度。 |
+| 设置 | 选择 JVM 进程、填写 PID、配置快捷键、摆放速度和求解策略。 |
 
 自动放置和批量处理会消耗游戏内要素资源。执行前应确认当前研究台状态和求解结果符合预期。
 
@@ -161,8 +162,10 @@ python tools\read_current_note.py --pid <PID>
 ```powershell
 python -m thaum_nexus.cli read-current-note
 python -m thaum_nexus.cli apply-current-note
+python -m thaum_nexus.cli apply-current-note --solver-mode optimal
 python -m thaum_nexus.cli inventory-notes
 python -m thaum_nexus.cli wheelchair --apply
+python -m thaum_nexus.cli wheelchair --apply --solver-mode optimal
 ```
 
 ## 构建便携版

@@ -29,6 +29,9 @@ import java.util.regex.Pattern;
 
 public final class ThaumNexusAgentV3 {
     private static volatile Instrumentation instrumentation;
+    private static final int SYNTHESIS_WAIT_CANCELLED = -1;
+    private static final int SYNTHESIS_WAIT_TIMED_OUT = 0;
+    private static final int SYNTHESIS_WAIT_CONFIRMED = 1;
 
     private ThaumNexusAgentV3() {
     }
@@ -182,7 +185,21 @@ public final class ThaumNexusAgentV3 {
             if (left == null || right == null || output == null) {
                 combinesSkipped++;
                 combineResults.add(new SynthesisApplyResult(step, "skipped", "unknown-aspect"));
-                continue;
+                return applyResultJson(
+                        screen.getClass().getName(),
+                        x,
+                        y,
+                        z,
+                        plan.combines.size(),
+                        combinesSent,
+                        combinesSkipped,
+                        combineResults,
+                        plan.placements.size(),
+                        sent,
+                        skipped,
+                        results,
+                        "error",
+                        "synthesis step references an unknown aspect: " + step.output);
             }
             int leftAvailable = availableAspectAmount(player, tile, left, remainingAspects);
             int rightAvailable = availableAspectAmount(player, tile, right, remainingAspects);
@@ -190,20 +207,57 @@ public final class ThaumNexusAgentV3 {
                 if (leftAvailable < 2) {
                     combinesSkipped++;
                     combineResults.add(new SynthesisApplyResult(step, "skipped", "unavailable-components"));
-                    continue;
+                    return applyResultJson(
+                            screen.getClass().getName(),
+                            x,
+                            y,
+                            z,
+                            plan.combines.size(),
+                            combinesSent,
+                            combinesSkipped,
+                            combineResults,
+                            plan.placements.size(),
+                            sent,
+                            skipped,
+                            results,
+                            "error",
+                            "synthesis components are unavailable for " + step.output);
                 }
             } else if (leftAvailable <= 0 || rightAvailable <= 0) {
                 combinesSkipped++;
                 combineResults.add(new SynthesisApplyResult(step, "skipped", "unavailable-components"));
-                continue;
+                return applyResultJson(
+                        screen.getClass().getName(),
+                        x,
+                        y,
+                        z,
+                        plan.combines.size(),
+                        combinesSent,
+                        combinesSkipped,
+                        combineResults,
+                        plan.placements.size(),
+                        sent,
+                        skipped,
+                        results,
+                        "error",
+                        "synthesis components are unavailable for " + step.output);
             }
+            int outputBefore = totalAvailableAspectAmount(player, tile, output);
             sendAspectCombinationPacket(player, tile, x, y, z, left, right);
-            consumeAspectAmount(left, remainingAspects);
-            consumeAspectAmount(right, remainingAspects);
-            addAspectAmount(player, tile, output, remainingAspects);
             combinesSent++;
-            combineResults.add(new SynthesisApplyResult(step, "sent", ""));
-            if (sleepCancelled(plan.delayMs, plan)) {
+            int synthesisTimeoutMs = Math.min(
+                    10000,
+                    Math.max(1500, Math.max(plan.delayMs + 500, plan.verifyDelayMs * 3)));
+            int synthesisWait = waitForAspectIncrease(
+                    player,
+                    tile,
+                    output,
+                    outputBefore,
+                    plan.delayMs,
+                    synthesisTimeoutMs,
+                    plan);
+            if (synthesisWait == SYNTHESIS_WAIT_CANCELLED) {
+                combineResults.add(new SynthesisApplyResult(step, "sent", "confirmation-cancelled"));
                 return applyResultJson(
                         screen.getClass().getName(),
                         x,
@@ -218,8 +272,39 @@ public final class ThaumNexusAgentV3 {
                         skipped,
                         results,
                         "cancelled",
-                        "cancel requested after synthesis step");
+                        "cancel requested while confirming synthesis step");
             }
+            if (synthesisWait == SYNTHESIS_WAIT_TIMED_OUT) {
+                combinesSkipped++;
+                combineResults.add(new SynthesisApplyResult(step, "failed", "synthesis-confirmation-timeout"));
+                return applyResultJson(
+                        screen.getClass().getName(),
+                        x,
+                        y,
+                        z,
+                        plan.combines.size(),
+                        combinesSent,
+                        combinesSkipped,
+                        combineResults,
+                        plan.placements.size(),
+                        sent,
+                        skipped,
+                        results,
+                        "error",
+                        "synthesis-confirmation-timeout: " + step.output);
+            }
+            remainingAspects.clear();
+            if (step.left.equals(step.right)) {
+                setAspectAmount(left, Math.max(0, leftAvailable - 2), remainingAspects);
+            } else {
+                setAspectAmount(left, Math.max(0, leftAvailable - 1), remainingAspects);
+                setAspectAmount(right, Math.max(0, rightAvailable - 1), remainingAspects);
+            }
+            setAspectAmount(
+                    output,
+                    totalAvailableAspectAmount(player, tile, output),
+                    remainingAspects);
+            combineResults.add(new SynthesisApplyResult(step, "sent", ""));
         }
 
         for (Placement placement : plan.placements) {
@@ -297,6 +382,77 @@ public final class ThaumNexusAgentV3 {
                     results,
                     "cancelled",
                     "cancel requested during verification delay");
+        }
+
+        if (combinesSent != plan.combines.size()
+                || combinesSkipped > 0
+                || sent != plan.placements.size()
+                || skipped > 0) {
+            return applyResultJson(
+                    screen.getClass().getName(),
+                    x,
+                    y,
+                    z,
+                    plan.combines.size(),
+                    combinesSent,
+                    combinesSkipped,
+                    combineResults,
+                    plan.placements.size(),
+                    sent,
+                    skipped,
+                    results,
+                    "error",
+                    "incomplete-apply: combines=" + combinesSent + "/" + plan.combines.size()
+                            + ", placements=" + sent + "/" + plan.placements.size());
+        }
+
+        if (!plan.placements.isEmpty()) {
+            Object verifiedNote = readResearchNote(screen);
+            if (verifiedNote == null) {
+                return applyResultJson(
+                        screen.getClass().getName(),
+                        x,
+                        y,
+                        z,
+                        plan.combines.size(),
+                        combinesSent,
+                        combinesSkipped,
+                        combineResults,
+                        plan.placements.size(),
+                        sent,
+                        skipped,
+                        results,
+                        "error",
+                        "placement-confirmation-failed: current research note is unavailable");
+            }
+            List<String> unconfirmed = new ArrayList<String>();
+            for (int i = 0; i < plan.placements.size(); i++) {
+                Placement placement = plan.placements.get(i);
+                String failure = placementVerificationFailure(verifiedNote, placement);
+                if (failure == null) {
+                    results.set(i, new PlacementApplyResult(placement, "confirmed", ""));
+                } else {
+                    results.set(i, new PlacementApplyResult(placement, "failed", failure));
+                    unconfirmed.add(placement.key() + "=" + placement.aspect + " (" + failure + ")");
+                }
+            }
+            if (!unconfirmed.isEmpty()) {
+                return applyResultJson(
+                        screen.getClass().getName(),
+                        x,
+                        y,
+                        z,
+                        plan.combines.size(),
+                        combinesSent,
+                        combinesSkipped,
+                        combineResults,
+                        plan.placements.size(),
+                        sent,
+                        skipped,
+                        results,
+                        "error",
+                        "placement-confirmation-failed: " + String.join(", ", unconfirmed));
+            }
         }
 
         return applyResultJson(
@@ -666,6 +822,28 @@ public final class ThaumNexusAgentV3 {
         return new PlacementApplyResult(placement, "skipped", "occupied-type-" + type);
     }
 
+    @SuppressWarnings("unchecked")
+    private static String placementVerificationFailure(Object note, Placement placement) throws Exception {
+        if (asBoolean(readFieldByNames(note, "complete"), false)) {
+            return null;
+        }
+        Object hexEntriesObject = readFieldByNames(note, "hexEntries");
+        if (!(hexEntriesObject instanceof Map)) {
+            return "missing-hexEntries";
+        }
+        Map<Object, Object> hexEntries = (Map<Object, Object>) hexEntriesObject;
+        Object entry = hexEntries.get(placement.key());
+        if (entry == null) {
+            return "missing-cell";
+        }
+        int type = asInt(readFieldByNames(entry, "type"), 0);
+        String actualAspect = aspectTag(readFieldByNames(entry, "aspect"));
+        if (type != 0 && placement.aspect.equals(actualAspect)) {
+            return null;
+        }
+        return "expected-" + placement.aspect + "-but-found-type-" + type + "-aspect-" + actualAspect;
+    }
+
     @SuppressWarnings("rawtypes")
     private static boolean isUsableResearchNote(Object note) throws Exception {
         if (note == null) {
@@ -966,6 +1144,41 @@ public final class ThaumNexusAgentV3 {
         return amount;
     }
 
+    private static int totalAvailableAspectAmount(Object player, Object tile, Object aspect) throws Exception {
+        int amount = playerAspectPoolAmount(player, aspect);
+        Object bonusAspects = readFieldByNames(tile, "bonusAspects");
+        return amount + aspectListAmount(bonusAspects, aspect);
+    }
+
+    private static int waitForAspectIncrease(
+            Object player,
+            Object tile,
+            Object aspect,
+            int amountBefore,
+            int minimumDelayMs,
+            int timeoutMs,
+            ApplyPlan plan
+    ) throws Exception {
+        long started = System.currentTimeMillis();
+        boolean confirmed = false;
+        while (true) {
+            if (isCancelRequested(plan)) {
+                return SYNTHESIS_WAIT_CANCELLED;
+            }
+            if (totalAvailableAspectAmount(player, tile, aspect) > amountBefore) {
+                confirmed = true;
+            }
+            long elapsed = System.currentTimeMillis() - started;
+            if (confirmed && elapsed >= Math.max(0, minimumDelayMs)) {
+                return SYNTHESIS_WAIT_CONFIRMED;
+            }
+            if (elapsed >= Math.max(1, timeoutMs)) {
+                return SYNTHESIS_WAIT_TIMED_OUT;
+            }
+            Thread.sleep(20L);
+        }
+    }
+
     private static int playerAspectPoolAmount(Object player, Object aspect) throws Exception {
         if (player == null || aspect == null) {
             return 0;
@@ -999,13 +1212,8 @@ public final class ThaumNexusAgentV3 {
         }
     }
 
-    private static void addAspectAmount(Object player, Object tile, Object aspect, Map<String, Integer> remaining) throws Exception {
-        String tag = aspectTag(aspect);
-        Integer amount = remaining.get(tag);
-        if (amount == null) {
-            amount = Integer.valueOf(availableAspectAmount(player, tile, aspect, remaining));
-        }
-        remaining.put(tag, Integer.valueOf(amount.intValue() + 1));
+    private static void setAspectAmount(Object aspect, int amount, Map<String, Integer> remaining) throws Exception {
+        remaining.put(aspectTag(aspect), Integer.valueOf(Math.max(0, amount)));
     }
 
     private static Object getPlayerKnowledge() throws Exception {

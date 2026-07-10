@@ -97,6 +97,126 @@ class SolverBasicTests(unittest.TestCase):
         self.assertEqual(resource_solution.placements, {HexCoord(1, 0): "auram"})
         validate_solution(board, kb, resource_solution)
 
+    def test_minimal_placement_mode_ignores_inventory_bias(self):
+        kb = KnowledgeBase.load()
+        board = BoardState.from_dict(
+            {
+                "name": "minimal-resource-choice",
+                "cells": [
+                    {"q": 0, "r": 0, "kind": "root", "aspect": "aer"},
+                    {"q": 1, "r": 0, "kind": "empty"},
+                    {"q": 2, "r": 0, "kind": "root", "aspect": "praecantatio"},
+                ],
+            }
+        )
+
+        solution = solve(
+            board,
+            kb,
+            SearchConfig(
+                aspect_inventory={"auram": 50, "vacuos": 0},
+                minimize_placements=True,
+            ),
+        )
+
+        self.assertEqual(solution.placements, {HexCoord(1, 0): "vacuos"})
+        validate_solution(board, kb, solution)
+
+    def test_minimal_placement_mode_compares_root_connection_orders(self):
+        kb = KnowledgeBase.load()
+        radius = 2
+        roots = {
+            (-2, 1): "volatus",
+            (-1, -1): "superbia",
+            (-1, 2): "strontio",
+        }
+        cells = []
+        for q in range(-radius, radius + 1):
+            r_min = max(-radius, -q - radius)
+            r_max = min(radius, -q + radius)
+            for r in range(r_min, r_max + 1):
+                aspect = roots.get((q, r))
+                cells.append(
+                    {"q": q, "r": r, "kind": "root", "aspect": aspect}
+                    if aspect is not None
+                    else {"q": q, "r": r, "kind": "empty"}
+                )
+        board = BoardState.from_dict({"name": "connection-order-choice", "cells": cells})
+
+        solution = solve(board, kb, SearchConfig(minimize_placements=True))
+
+        self.assertEqual(len(solution.placements), 3)
+        validate_solution(board, kb, solution)
+
+    def test_minimal_placement_mode_uses_inventory_only_as_search_hint(self):
+        kb = KnowledgeBase.load()
+        radius = 2
+        roots = {
+            (0, -1): "terra",
+            (0, 1): "infernus",
+            (1, -2): "machina",
+        }
+        cells = []
+        for q in range(-radius, radius + 1):
+            r_min = max(-radius, -q - radius)
+            r_max = min(radius, -q + radius)
+            for r in range(r_min, r_max + 1):
+                aspect = roots.get((q, r))
+                cells.append(
+                    {"q": q, "r": r, "kind": "root", "aspect": aspect}
+                    if aspect is not None
+                    else {"q": q, "r": r, "kind": "empty"}
+                )
+        board = BoardState.from_dict({"name": "inventory-search-hint", "cells": cells})
+        inventory = {
+            "tutamen": 50,
+            "ignis": 50,
+            "instrumentum": 50,
+            "telum": 50,
+        }
+
+        solution = solve(
+            board,
+            kb,
+            SearchConfig(aspect_inventory=inventory, minimize_placements=True),
+        )
+
+        self.assertEqual(len(solution.placements), 4)
+        validate_solution(board, kb, solution)
+
+    def test_minimal_placement_mode_finds_shared_two_cell_global_solution(self):
+        kb = KnowledgeBase.load()
+        radius = 2
+        roots = {
+            (-1, -1): "instrumentum",
+            (-1, 1): "sano",
+            (0, 2): "terra",
+            (1, 0): "bestia",
+        }
+        cells = []
+        for q in range(-radius, radius + 1):
+            r_min = max(-radius, -q - radius)
+            r_max = min(radius, -q + radius)
+            for r in range(r_min, r_max + 1):
+                aspect = roots.get((q, r))
+                cells.append(
+                    {"q": q, "r": r, "kind": "root", "aspect": aspect}
+                    if aspect is not None
+                    else {"q": q, "r": r, "kind": "empty"}
+                )
+        board = BoardState.from_dict({"name": "shared-global-solution", "cells": cells})
+
+        solution = solve(board, kb, SearchConfig(minimize_placements=True))
+
+        self.assertEqual(
+            solution.placements,
+            {
+                HexCoord(-1, 0): "ordo",
+                HexCoord(0, 1): "victus",
+            },
+        )
+        validate_solution(board, kb, solution)
+
     def test_large_board_solution_regression(self):
         kb = KnowledgeBase.load()
         board = radius_board(4)

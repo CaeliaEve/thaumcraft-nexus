@@ -124,6 +124,18 @@ function Copy-BundledJdk {
     Copy-Item -LiteralPath $Source -Destination $target -Recurse -Force
 }
 
+function Copy-NormalizedUtf8Text {
+    param(
+        [string]$Source,
+        [string]$Destination
+    )
+
+    $content = [System.IO.File]::ReadAllText($Source)
+    $content = $content -replace "`r`n", "`n" -replace "`r", "`n"
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($Destination, $content, $utf8NoBom)
+}
+
 Push-Location $ProjectRoot
 try {
     $Python = Resolve-PythonCommand
@@ -203,7 +215,7 @@ try {
     foreach ($NoticeFile in @("LICENSE", "THIRD_PARTY_NOTICES.md")) {
         $NoticePath = Join-Path $ProjectRoot $NoticeFile
         if (Test-Path $NoticePath) {
-            Copy-Item -LiteralPath $NoticePath -Destination (Join-Path $AppDist $NoticeFile) -Force
+            Copy-NormalizedUtf8Text $NoticePath (Join-Path $AppDist $NoticeFile)
         }
     }
 
@@ -215,6 +227,7 @@ Thaumcraft Nexus 便携版
 2. 启动 GT New Horizons，进入游戏并打开神秘时代研究台。
 3. 双击 ThaumcraftNexus.exe。
 4. 在界面中读取当前笔记、自动放置，或使用轮椅模式批量处理。
+5. 设置中可开启“最少要素优先”；关闭时保持库存优先策略。
 
 License:
 - Original source code is licensed under the Apache License 2.0. See LICENSE.
@@ -225,7 +238,10 @@ License:
 - Java 8 需要 lib\tools.jar；Java 9+ 需要 jdk.attach 模块。
 - 运行时生成的 JSON、图片和设置会写入本目录下的 runtime 文件夹。
 "@
-    $PortableReadme | Set-Content -Encoding UTF8 -Path (Join-Path $AppDist "README_CN.txt")
+    $PortableReadmePath = Join-Path $AppDist "README_CN.txt"
+    $PortableReadmeLf = ($PortableReadme -replace "`r`n", "`n") + "`n"
+    $Utf8Bom = New-Object System.Text.UTF8Encoding($true)
+    [System.IO.File]::WriteAllText($PortableReadmePath, $PortableReadmeLf, $Utf8Bom)
 
     Write-Output ""
     Write-Output "Portable build complete:"
