@@ -46,8 +46,9 @@ def main(argv: list[str] | None = None) -> int:
         help="Attach to the running Minecraft client, export the open Thaumcraft note, and solve it.",
     )
     current_parser.add_argument("--project-root", type=Path, default=None)
-    current_parser.add_argument("--output", type=Path, default=Path("runtime/current_note.json"))
+    current_parser.add_argument("--output", type=Path, default=None)
     current_parser.add_argument("--pid", help="Minecraft JVM pid. Omit to auto-detect.")
+    current_parser.add_argument("--solver-mode", choices=("inventory", "optimal"), default="inventory")
     current_parser.add_argument("--no-build", action="store_true", help="Do not rebuild java-agent before attaching.")
     current_parser.add_argument("--timeout", type=float, default=20.0)
     current_parser.set_defaults(func=_read_current_note_command)
@@ -57,10 +58,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Attach to Minecraft, solve the open Thaumcraft note, and send placement packets.",
     )
     apply_parser.add_argument("--project-root", type=Path, default=None)
-    apply_parser.add_argument("--note-output", type=Path, default=Path("runtime/current_note.json"))
-    apply_parser.add_argument("--plan-output", type=Path, default=Path("runtime/apply_plan.json"))
-    apply_parser.add_argument("--result-output", type=Path, default=Path("runtime/apply_result.json"))
+    apply_parser.add_argument("--note-output", type=Path, default=None)
+    apply_parser.add_argument("--plan-output", type=Path, default=None)
+    apply_parser.add_argument("--result-output", type=Path, default=None)
     apply_parser.add_argument("--pid", help="Minecraft JVM pid. Omit to auto-detect.")
+    apply_parser.add_argument("--solver-mode", choices=("inventory", "optimal"), default="inventory")
     apply_parser.add_argument("--delay-ms", type=int, default=120, help="Delay between placement packets.")
     apply_parser.add_argument("--verify-delay-ms", type=int, default=600, help="Delay after the last packet.")
     apply_parser.add_argument("--no-build", action="store_true", help="Do not rebuild java-agent before attaching.")
@@ -72,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Attach to Minecraft and list unsolved Thaumcraft research notes in the open research-table container.",
     )
     inventory_parser.add_argument("--project-root", type=Path, default=None)
-    inventory_parser.add_argument("--output", type=Path, default=Path("runtime/inventory_notes.json"))
+    inventory_parser.add_argument("--output", type=Path, default=None)
     inventory_parser.add_argument("--pid", help="Minecraft JVM pid. Omit to auto-detect.")
     inventory_parser.add_argument("--no-build", action="store_true", help="Do not rebuild java-agent before attaching.")
     inventory_parser.add_argument("--timeout", type=float, default=20.0)
@@ -84,7 +86,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     load_note_parser.add_argument("slot", type=int, help="Container slot from inventory-notes output")
     load_note_parser.add_argument("--project-root", type=Path, default=None)
-    load_note_parser.add_argument("--result-output", type=Path, default=Path("runtime/load_note_result.json"))
+    load_note_parser.add_argument("--result-output", type=Path, default=None)
     load_note_parser.add_argument("--pid", help="Minecraft JVM pid. Omit to auto-detect.")
     load_note_parser.add_argument("--no-build", action="store_true", help="Do not rebuild java-agent before attaching.")
     load_note_parser.add_argument("--timeout", type=float, default=20.0)
@@ -96,6 +98,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     wheelchair_parser.add_argument("--project-root", type=Path, default=None)
     wheelchair_parser.add_argument("--pid", help="Minecraft JVM pid. Omit to auto-detect.")
+    wheelchair_parser.add_argument("--solver-mode", choices=("inventory", "optimal"), default="inventory")
     wheelchair_parser.add_argument("--apply", action="store_true", help="Actually synthesize/place aspects and swap notes.")
     wheelchair_parser.add_argument("--max-notes", type=int, default=36)
     wheelchair_parser.add_argument("--delay-ms", type=int, default=120)
@@ -148,6 +151,7 @@ def _read_current_note_command(args: argparse.Namespace) -> int:
         pid=args.pid,
         build_if_needed=not args.no_build,
         timeout=args.timeout,
+        solve_mode=args.solver_mode,
     )
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     return 0
@@ -166,6 +170,7 @@ def _apply_current_note_command(args: argparse.Namespace) -> int:
         verify_delay_ms=args.verify_delay_ms,
         build_if_needed=not args.no_build,
         timeout=args.timeout,
+        solve_mode=args.solver_mode,
     )
     print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
     return 0
@@ -216,6 +221,7 @@ def _wheelchair_command(args: argparse.Namespace) -> int:
         verify_delay_ms=args.verify_delay_ms,
         build_if_needed=not args.no_build,
         timeout=args.timeout,
+        solve_mode=args.solver_mode,
     )
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0

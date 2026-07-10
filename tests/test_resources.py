@@ -23,6 +23,26 @@ class ResourcePlanningTests(unittest.TestCase):
         self.assertEqual([step.to_dict() for step in plan.synthesis], [{"output": "lux", "left": "aer", "right": "ignis"}])
         self.assertEqual(plan.remaining, {})
 
+    def test_high_tier_aspect_is_synthesized_depth_first(self):
+        kb = KnowledgeBase.load()
+
+        plan = plan_resource_usage(
+            kb,
+            ["cognitio"],
+            {aspect: 10 for aspect in kb.primal},
+        )
+
+        self.assertTrue(plan.is_sufficient)
+        self.assertEqual(
+            [step.output for step in plan.synthesis],
+            ["victus", "victus", "mortuus", "spiritus", "cognitio"],
+        )
+        self.assertEqual(plan.synthesis[-1].to_dict(), {
+            "output": "cognitio",
+            "left": "ignis",
+            "right": "spiritus",
+        })
+
     def test_shortage_reports_missing_component(self):
         kb = KnowledgeBase.load()
 

@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
+import importlib
 import json
 import os
 import shutil
 import subprocess
+import threading
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -18,10 +22,19 @@ from .solver import SearchConfig, solve
 
 
 JAVA_HELPER_MEMORY_FLAGS = ["-Xms16m", "-Xmx128m"]
+SOLVER_MODE_INVENTORY = "inventory"
+SOLVER_MODE_OPTIMAL = "optimal"
+DEFAULT_SOLVER_MODE = SOLVER_MODE_INVENTORY
+SOLVER_MODES = frozenset({SOLVER_MODE_INVENTORY, SOLVER_MODE_OPTIMAL})
+_ATTACH_LOCK_STATE = threading.local()
 
 
 class OperationCancelled(RuntimeError):
     """Raised when a GUI/user cancellation request stops an in-flight operation."""
+
+
+class UnsafeAgentStateError(RuntimeError):
+    """Raised when a mutating Java Agent may still be running in the target JVM."""
 
 
 @dataclass(frozen=True)
@@ -30,6 +43,7 @@ class CurrentNoteResult:
     solution: Any
     note_json_path: Path
     resource_plan: ResourcePlan | None = None
+    solve_mode: str = DEFAULT_SOLVER_MODE
     stdout: str = ""
     stderr: str = ""
 
@@ -48,6 +62,7 @@ class CurrentNoteResult:
             },
             "board": self.note.board.to_dict(),
             "solution": self.solution.to_dict(),
+            "solveMode": self.solve_mode,
         }
         if self.resource_plan is not None:
             payload["resources"] = self.resource_plan.to_dict()
@@ -113,7 +128,11 @@ def export_current_note(
 
     root = _project_root(project_root)
     if output_path is None:
-        output = _resolve_runtime_path(project_root, None, "current_note.json")
+        output = _resolve_runtime_path(
+            project_root,
+            None,
+            f"current_note_{uuid.uuid4().hex[:12]}.json",
+        )
     else:
         output = Path(output_path)
         if not output.is_absolute():
@@ -155,6 +174,7 @@ def read_and_solve_current_note(
     build_if_needed: bool = True,
     timeout: float = 20.0,
     stop_event: Any | None = None,
+    solve_mode: str = DEFAULT_SOLVER_MODE,
 ) -> CurrentNoteResult:
     root = _project_root(project_root)
     payload, note_path, stdout, stderr = export_current_note(
@@ -168,11 +188,12 @@ def read_and_solve_current_note(
     note = ResearchNote.from_dict(payload)
     kb = KnowledgeBase.load(root)
     available_aspects = available_aspects_from_note_payload(payload)
-    config = SearchConfig(aspect_inventory=available_aspects) if available_aspects else None
+    solve_mode = normalize_solver_mode(solve_mode)
+    config = _search_config_for_mode(solve_mode, available_aspects)
     solution = solve(note.board, kb, config)
     resource_plan = (
         plan_resource_usage(kb, solution.placements.values(), available_aspects)
-        if available_aspects
+        if available_aspects is not None
         else None
     )
     return CurrentNoteResult(
@@ -180,6 +201,7 @@ def read_and_solve_current_note(
         solution=solution,
         note_json_path=note_path,
         resource_plan=resource_plan,
+        solve_mode=solve_mode,
         stdout=stdout,
         stderr=stderr,
     )
@@ -202,8 +224,9 @@ def apply_solution_to_current_note(
     """Send solver placements to the open Thaumcraft research table."""
 
     root = _project_root(project_root)
-    plan = _resolve_runtime_path(project_root, plan_path, "apply_plan.json")
-    result = _resolve_runtime_path(project_root, result_path, "apply_result.json")
+    operation_id = uuid.uuid4().hex[:12]
+    plan = _resolve_runtime_path(project_root, plan_path, f"apply_plan_{operation_id}.json")
+    result = _resolve_runtime_path(project_root, result_path, f"apply_result_{operation_id}.json")
     cancel_file = _resolve_runtime_path(project_root, None, f"{result.stem}.cancel")
     plan.parent.mkdir(parents=True, exist_ok=True)
     result.parent.mkdir(parents=True, exist_ok=True)
@@ -281,38 +304,42 @@ def read_solve_and_apply_current_note(
     build_if_needed: bool = True,
     timeout: float = 40.0,
     stop_event: Any | None = None,
+    solve_mode: str = DEFAULT_SOLVER_MODE,
 ) -> ApplyResult:
-    current = read_and_solve_current_note(
-        project_root,
-        output_path=note_output_path,
-        pid=pid,
-        build_if_needed=build_if_needed,
-        timeout=min(timeout, 20.0),
-        stop_event=stop_event,
-    )
-    if _is_cancelled(stop_event):
-        raise OperationCancelled("operation cancelled before apply")
-    apply_payload, apply_plan, apply_result, stdout, stderr = apply_solution_to_current_note(
-        current.solution,
-        project_root,
-        resource_plan=current.resource_plan,
-        plan_path=plan_path,
-        result_path=result_path,
-        pid=pid,
-        delay_ms=delay_ms,
-        verify_delay_ms=verify_delay_ms,
-        build_if_needed=build_if_needed,
-        timeout=timeout,
-        stop_event=stop_event,
-    )
-    return ApplyResult(
-        current=current,
-        apply_plan_path=apply_plan,
-        apply_result_path=apply_result,
-        apply_payload=apply_payload,
-        stdout=stdout,
-        stderr=stderr,
-    )
+    target_pid = _resolve_target_pid(pid)
+    with _target_attach_lock(target_pid, timeout=timeout, stop_event=stop_event):
+        current = read_and_solve_current_note(
+            project_root,
+            output_path=note_output_path,
+            pid=target_pid,
+            build_if_needed=build_if_needed,
+            timeout=min(timeout, 20.0),
+            stop_event=stop_event,
+            solve_mode=solve_mode,
+        )
+        if _is_cancelled(stop_event):
+            raise OperationCancelled("operation cancelled before apply")
+        apply_payload, apply_plan, apply_result, stdout, stderr = apply_solution_to_current_note(
+            current.solution,
+            project_root,
+            resource_plan=current.resource_plan,
+            plan_path=plan_path,
+            result_path=result_path,
+            pid=target_pid,
+            delay_ms=delay_ms,
+            verify_delay_ms=verify_delay_ms,
+            build_if_needed=build_if_needed,
+            timeout=timeout,
+            stop_event=stop_event,
+        )
+        return ApplyResult(
+            current=current,
+            apply_plan_path=apply_plan,
+            apply_result_path=apply_result,
+            apply_payload=apply_payload,
+            stdout=stdout,
+            stderr=stderr,
+        )
 
 
 def solution_to_apply_plan(
@@ -340,13 +367,13 @@ def solution_to_apply_plan(
     return payload
 
 
-def available_aspects_from_note_payload(payload: dict[str, Any]) -> dict[str, int]:
+def available_aspects_from_note_payload(payload: dict[str, Any]) -> dict[str, int] | None:
     aspects = payload.get("aspects")
     if not isinstance(aspects, dict):
-        return {}
+        return None
     available = aspects.get("available")
     if not isinstance(available, dict):
-        return {}
+        return None
     out: dict[str, int] = {}
     for key, value in available.items():
         try:
@@ -356,6 +383,23 @@ def available_aspects_from_note_payload(payload: dict[str, Any]) -> dict[str, in
         if amount > 0:
             out[str(key)] = amount
     return out
+
+
+def normalize_solver_mode(value: Any) -> str:
+    mode = str(value or "").strip().lower()
+    return mode if mode in SOLVER_MODES else DEFAULT_SOLVER_MODE
+
+
+def _search_config_for_mode(
+    solve_mode: str,
+    available_aspects: dict[str, int] | None,
+) -> SearchConfig | None:
+    if solve_mode == SOLVER_MODE_OPTIMAL:
+        return SearchConfig(
+            aspect_inventory=available_aspects,
+            minimize_placements=True,
+        )
+    return SearchConfig(aspect_inventory=available_aspects) if available_aspects is not None else None
 
 
 def export_inventory_notes(
@@ -370,7 +414,11 @@ def export_inventory_notes(
     """Export research-note stacks from the open research-table container."""
 
     root = _project_root(project_root)
-    output = _resolve_runtime_path(project_root, output_path, "inventory_notes.json")
+    output = _resolve_runtime_path(
+        project_root,
+        output_path,
+        f"inventory_notes_{uuid.uuid4().hex[:12]}.json",
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     if output.exists():
         output.unlink()
@@ -411,7 +459,11 @@ def load_inventory_note_slot(
     """Move/swap one container slot into the research-table note slot."""
 
     root = _project_root(project_root)
-    result = _resolve_runtime_path(project_root, result_path, "load_note_result.json")
+    result = _resolve_runtime_path(
+        project_root,
+        result_path,
+        f"load_note_result_{uuid.uuid4().hex[:12]}.json",
+    )
     result.parent.mkdir(parents=True, exist_ok=True)
     if result.exists():
         result.unlink()
@@ -451,6 +503,38 @@ def solve_all_inventory_notes(
     timeout: float = 60.0,
     stop_event: Any | None = None,
     progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    solve_mode: str = DEFAULT_SOLVER_MODE,
+) -> dict[str, Any]:
+    target_pid = _resolve_target_pid(pid)
+    with _target_attach_lock(target_pid, timeout=timeout, stop_event=stop_event):
+        return _solve_all_inventory_notes_locked(
+            project_root,
+            pid=target_pid,
+            apply=apply,
+            max_notes=max_notes,
+            delay_ms=delay_ms,
+            verify_delay_ms=verify_delay_ms,
+            build_if_needed=build_if_needed,
+            timeout=timeout,
+            stop_event=stop_event,
+            progress_callback=progress_callback,
+            solve_mode=solve_mode,
+        )
+
+
+def _solve_all_inventory_notes_locked(
+    project_root: Path | str | None = None,
+    *,
+    pid: str | int | None = None,
+    apply: bool = False,
+    max_notes: int = 36,
+    delay_ms: int = 120,
+    verify_delay_ms: int = 800,
+    build_if_needed: bool = True,
+    timeout: float = 60.0,
+    stop_event: Any | None = None,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
+    solve_mode: str = DEFAULT_SOLVER_MODE,
 ) -> dict[str, Any]:
     """Wheelchair mode: solve the table note, then every unsolved inventory note.
 
@@ -595,6 +679,7 @@ def solve_all_inventory_notes(
                 build_if_needed=build_if_needed,
                 timeout=min(timeout, 20.0),
                 stop_event=stop_event,
+                solve_mode=solve_mode,
             )
             if current.note.complete:
                 current_needs_solve = False
@@ -686,6 +771,14 @@ def solve_all_inventory_notes(
         except Exception as exc:
             current_needs_solve = False
             steps.append({"iteration": iteration, "action": "read-current-note", "status": "skipped", "error": str(exc)})
+            return {
+                "source": "thaum-nexus",
+                "status": "error",
+                "action": "wheelchair-apply",
+                "message": f"wheelchair mode stopped after an operation error: {exc}",
+                "solvedOrAttempted": solved,
+                "steps": steps,
+            }
 
     return {
         "source": "thaum-nexus",
@@ -1177,6 +1270,154 @@ def _display_name_from_command_line(command_line: str) -> str:
     return ""
 
 
+def _resolve_target_pid(pid: str | int | None) -> str:
+    value = str(pid).strip() if pid is not None else ""
+    value = value or _choose_minecraft_jvm_pid()
+    return str(int(value)) if value.isdigit() else value
+
+
+def _global_attach_lock_root() -> Path:
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        return Path(local_app_data) / "ThaumcraftNexus" / "locks"
+    return Path.home() / ".thaumcraft-nexus" / "locks"
+
+
+def _target_lock_path(target_pid: str) -> Path:
+    return _global_attach_lock_root() / f"jvm_{target_pid}.lock"
+
+
+def _unsafe_marker_path(target_pid: str) -> Path:
+    return _global_attach_lock_root() / f"jvm_{target_pid}.unsafe"
+
+
+@contextmanager
+def _target_attach_lock(
+    target_pid: str,
+    *,
+    timeout: float,
+    stop_event: Any | None,
+):
+    """Serialize complete operations for one target JVM across app copies."""
+
+    counts = getattr(_ATTACH_LOCK_STATE, "counts", None)
+    if counts is None:
+        counts = {}
+        _ATTACH_LOCK_STATE.counts = counts
+    if counts.get(target_pid, 0) > 0:
+        if _unsafe_marker_path(target_pid).exists():
+            raise UnsafeAgentStateError(
+                "the current JVM transaction entered an unsafe Java Agent state; "
+                f"restart JVM {target_pid} before running another operation"
+            )
+        counts[target_pid] += 1
+        try:
+            yield
+        finally:
+            counts[target_pid] -= 1
+        return
+
+    lock_path = _target_lock_path(target_pid)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    handle = lock_path.open("a+b")
+    if handle.seek(0, os.SEEK_END) == 0:
+        handle.write(b"\0")
+        handle.flush()
+
+    deadline = time.monotonic() + max(1.0, float(timeout))
+    acquired = False
+    try:
+        while not acquired:
+            if _is_cancelled(stop_event):
+                raise OperationCancelled("operation cancelled while waiting for the target JVM lock")
+            try:
+                _lock_file_byte(handle)
+                acquired = True
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError(
+                        f"another Thaumcraft Nexus operation is still using JVM {target_pid}"
+                    )
+                time.sleep(0.05)
+
+        unsafe_marker = _unsafe_marker_path(target_pid)
+        if unsafe_marker.exists():
+            if _pid_is_running(target_pid):
+                raise UnsafeAgentStateError(
+                    "a previous Java Agent operation did not confirm shutdown; "
+                    f"restart JVM {target_pid} before running another operation"
+                )
+            unsafe_marker.unlink(missing_ok=True)
+
+        counts[target_pid] = 1
+        try:
+            yield
+        finally:
+            counts.pop(target_pid, None)
+    finally:
+        try:
+            if acquired:
+                _unlock_file_byte(handle)
+        finally:
+            handle.close()
+
+
+def _pid_is_running(pid: str | int) -> bool:
+    pid_text = str(pid).strip()
+    if not pid_text.isdigit():
+        return False
+    process_id = int(pid_text)
+    if os.name == "nt":
+        import ctypes
+
+        process_query_limited_information = 0x1000
+        still_active = 259
+        handle = ctypes.windll.kernel32.OpenProcess(
+            process_query_limited_information,
+            False,
+            process_id,
+        )
+        if not handle:
+            return False
+        try:
+            exit_code = ctypes.c_ulong()
+            if not ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return True
+            return exit_code.value == still_active
+        finally:
+            ctypes.windll.kernel32.CloseHandle(handle)
+
+    try:
+        os.kill(process_id, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _lock_file_byte(handle: Any) -> None:
+    handle.seek(0)
+    if os.name == "nt":
+        import msvcrt
+
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        return
+
+    fcntl = importlib.import_module("fcntl")
+    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _unlock_file_byte(handle: Any) -> None:
+    handle.seek(0)
+    if os.name == "nt":
+        import msvcrt
+
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        return
+
+    fcntl = importlib.import_module("fcntl")
+    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def _run_attacher(
     root: Path,
     attacher_args: list[str],
@@ -1193,18 +1434,21 @@ def _run_attacher(
         raise OperationCancelled("operation cancelled before Java attach")
 
     agent_jar = ensure_agent_built(root) if build_if_needed else agent_jar_path(root)
-    target_pid = str(pid).strip() if pid is not None and str(pid).strip() else _choose_minecraft_jvm_pid()
+    target_pid = _resolve_target_pid(pid)
     runtime = _select_attacher_runtime(target_pid)
     cmd = _build_attacher_command(runtime, agent_jar, attacher_args, pid=target_pid)
+    mutates_target = bool(attacher_args and attacher_args[0] in {"apply", "load-note"})
 
     cwd = app_root() if is_frozen() else root
-    completed = _run_cancellable_subprocess(
-        cmd,
-        cwd=str(cwd),
-        timeout=timeout,
-        stop_event=stop_event,
-        cancel_path=cancel_path,
-    )
+    with _target_attach_lock(target_pid, timeout=timeout, stop_event=stop_event):
+        completed = _run_cancellable_subprocess(
+            cmd,
+            cwd=str(cwd),
+            timeout=timeout,
+            stop_event=stop_event,
+            cancel_path=cancel_path,
+            unsafe_marker=_unsafe_marker_path(target_pid) if mutates_target else None,
+        )
     if _is_cancelled(stop_event):
         raise OperationCancelled(
             "operation cancelled while Java attach was running\n"
@@ -1234,8 +1478,9 @@ def _run_cancellable_subprocess(
     timeout: float,
     stop_event: Any | None = None,
     cancel_path: Path | None = None,
+    unsafe_marker: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    if stop_event is None:
+    if stop_event is None and cancel_path is None and unsafe_marker is None:
         return subprocess.run(
             cmd,
             cwd=cwd,
@@ -1255,24 +1500,75 @@ def _run_cancellable_subprocess(
     )
     started = time.monotonic()
     cancel_deadline: float | None = None
+    timeout_cancelled = False
+    timeout_cancel_deadline: float | None = None
     while True:
         returncode = process.poll()
         if returncode is not None:
             stdout, stderr = process.communicate()
+            if timeout_cancelled:
+                raise subprocess.TimeoutExpired(
+                    cmd,
+                    timeout,
+                    output=stdout,
+                    stderr=stderr,
+                )
             return subprocess.CompletedProcess(cmd, returncode, stdout, stderr)
 
         now = time.monotonic()
-        if timeout is not None and now - started >= timeout:
-            _terminate_process(process)
-            raise subprocess.TimeoutExpired(cmd, timeout)
+        if timeout is not None and now - started >= timeout and not timeout_cancelled:
+            if cancel_path is None:
+                stdout, stderr = _terminate_process(process)
+                if unsafe_marker is not None:
+                    _touch_unsafe_marker(
+                        unsafe_marker,
+                        "attacher timeout expired before the mutating Java Agent completed",
+                    )
+                    raise UnsafeAgentStateError(
+                        "mutating Java Agent did not confirm completion after attacher timeout; "
+                        "restart the target JVM before retrying\n"
+                        f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+                    )
+                raise subprocess.TimeoutExpired(
+                    cmd,
+                    timeout,
+                    output=stdout,
+                    stderr=stderr,
+                )
+            _touch_cancel_file(cancel_path)
+            timeout_cancelled = True
+            timeout_cancel_deadline = now + 5.0
 
-        if _is_cancelled(stop_event):
+        if timeout_cancelled and timeout_cancel_deadline is not None and now >= timeout_cancel_deadline:
+            stdout, stderr = _terminate_process(process)
+            if unsafe_marker is not None:
+                _touch_unsafe_marker(
+                    unsafe_marker,
+                    "attacher timeout expired before the Java Agent confirmed cancellation",
+                )
+            raise UnsafeAgentStateError(
+                "Java Agent did not confirm cancellation after timeout; "
+                "restart the target JVM before retrying\n"
+                f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+            )
+
+        if not timeout_cancelled and _is_cancelled(stop_event):
             if cancel_path is not None:
                 _touch_cancel_file(cancel_path)
             if cancel_deadline is None:
                 cancel_deadline = now + 0.8
             elif now >= cancel_deadline:
                 stdout, stderr = _terminate_process(process)
+                if unsafe_marker is not None:
+                    _touch_unsafe_marker(
+                        unsafe_marker,
+                        "attacher was terminated before the Java Agent confirmed cancellation",
+                    )
+                    raise UnsafeAgentStateError(
+                        "Java Agent did not confirm cancellation; "
+                        "restart the target JVM before retrying\n"
+                        f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+                    )
                 raise OperationCancelled(
                     "operation cancelled while Java attach was running\n"
                     f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}"
@@ -1285,6 +1581,14 @@ def _touch_cancel_file(path: Path) -> None:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("cancelled\n", encoding="utf-8")
+    except OSError:
+        pass
+
+
+def _touch_unsafe_marker(path: Path, message: str) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(message.rstrip() + "\n", encoding="utf-8")
     except OSError:
         pass
 

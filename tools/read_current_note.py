@@ -19,12 +19,13 @@ def main(argv: list[str] | None = None) -> int:
         description="Attach to the running GTNH/Minecraft client, export the open Thaumcraft note, and solve it."
     )
     parser.add_argument("--project-root", type=Path, default=PROJECT_ROOT)
-    parser.add_argument("--output", type=Path, default=Path("runtime/current_note.json"), help="Where to write note JSON")
+    parser.add_argument("--output", type=Path, default=None, help="Where to write note JSON")
     parser.add_argument("--solution-output", type=Path, default=Path("runtime/current_solution.json"))
     parser.add_argument("--apply", action="store_true", help="Also send the placements to the open research table.")
-    parser.add_argument("--apply-plan-output", type=Path, default=Path("runtime/apply_plan.json"))
-    parser.add_argument("--apply-result-output", type=Path, default=Path("runtime/apply_result.json"))
+    parser.add_argument("--apply-plan-output", type=Path, default=None)
+    parser.add_argument("--apply-result-output", type=Path, default=None)
     parser.add_argument("--pid", help="Minecraft JVM pid. Omit to auto-detect.")
+    parser.add_argument("--solver-mode", choices=("inventory", "optimal"), default="inventory")
     parser.add_argument("--delay-ms", type=int, default=120, help="Delay between placement packets when --apply is used.")
     parser.add_argument("--verify-delay-ms", type=int, default=600)
     parser.add_argument("--no-build", action="store_true", help="Do not rebuild java-agent before attaching.")
@@ -42,6 +43,7 @@ def main(argv: list[str] | None = None) -> int:
             verify_delay_ms=args.verify_delay_ms,
             build_if_needed=not args.no_build,
             timeout=max(args.timeout, 40.0),
+            solve_mode=args.solver_mode,
         )
         payload = result.to_dict()
     else:
@@ -51,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
             pid=args.pid,
             build_if_needed=not args.no_build,
             timeout=args.timeout,
+            solve_mode=args.solver_mode,
         )
         payload = result.to_dict()
 
