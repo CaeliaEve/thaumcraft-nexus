@@ -13,11 +13,12 @@ from .client_bridge import (
 )
 from .knowledge_base import KnowledgeBase
 from .overlay import BoardImageRenderer
-from .paths import app_root, resource_root, runtime_root
+from .paths import app_root, resource_path, resource_root, runtime_root
 
 
 GITHUB_URL = "https://github.com/CaeliaEve/thaumcraft-nexus"
 GITHUB_ICON = Path("image") / "icons8-github-50.png"
+BACKGROUND_IMAGE = Path("image") / "thaumonomicon_bg_clean.png"
 DEFAULT_SHORTCUTS = {
     "read": "<F5>",
     "apply": "<F6>",
@@ -36,14 +37,14 @@ PLACEMENT_SPEED_PRESETS = {
 ACTION_LABELS = {
     "read": "读取当前笔记",
     "apply": "读取并自动放置",
-    "wheelchair": "轮椅模式：解完背包笔记",
+    "wheelchair": "轮椅模式 · 解完背包笔记",
     "save": "保存答案图",
 }
 ACTION_ORDER = ("read", "apply", "wheelchair", "save")
 
 
 class ThaumNexusGui:
-    """Minimal desktop GUI for the structured client-note workflow."""
+    """Natively rendered Thaumonomicon desktop GUI for structured research note solving."""
     # UI text markers: 读取当前笔记 / 读取并自动放置 / 轮椅模式 / 停止当前任务
 
     def __init__(self, project_root: Path | str | None = None) -> None:
@@ -55,16 +56,21 @@ class ThaumNexusGui:
         self.board_renderer = BoardImageRenderer(self.kb, project_root=self.resource_root, hex_size=34, icon_size=24)
 
         self.tk = None
+        self.palette: dict[str, str] = {}
         self.canvas = None
+        self.logbook = None
+        self.log_lines: list[str] = []
+        self.details_window = None
+        self.details_text = None
         self.status = None
         self.note_name = None
         self.placement_count = None
         self.worker_label = None
-        self.progress = None
-        self.log_text = None
         self.buttons: dict[str, Any] = {}
         self.stop_button = None
         self.shortcut_bindings: list[str] = []
+        self.canvas_shortcut_tag = f"ThaumNexusShortcuts:{id(self)}"
+        self.canvas_shortcut_bindings: dict[str, str] = {}
         self.shortcuts = self._load_shortcuts()
         self.placement_speed = self._load_placement_speed()
         self.solver_mode = self._load_solver_mode()
@@ -73,15 +79,10 @@ class ThaumNexusGui:
         # resurrect a stale PID from gui_settings.json.
         self.target_pid = ""
 
-        self.photo = None
-        self.github_normal_photo = None
-        self.github_hover_photo = None
-        self.canvas_refresh_job = None
-        self.canvas_image_cache_key: tuple[int, int, int] | None = None
         self.rendered = None
         self.solution_payload: dict[str, Any] | None = None
         self.solution_image_path: Path | None = None
-        self.display_scale = 1.0
+        self.batch_total = 0
 
         self.worker_thread: threading.Thread | None = None
         self.worker_queue: queue.Queue[tuple[str, Any]] | None = None
@@ -95,260 +96,231 @@ class ThaumNexusGui:
 
         self.tk = tk.Tk()
         self.tk.title("Thaumcraft Nexus")
-        self.tk.geometry("1180x780")
-        self.tk.minsize(980, 660)
+        self.tk.geometry("1024x681")
+        self.tk.minsize(1024, 681)
 
         self._configure_style(ttk)
         self._build_layout(tk, ttk)
         self._set_status("准备就绪。")
-        self._append_log("\u51c6\u5907\u5c31\u7eea\u3002")
+        self._append_log("准备就绪。")
         self.tk.mainloop()
         return 0
 
-    def _configure_style(self, ttk) -> None:
+    def _configure_style(self, ttk: Any) -> None:
         style = ttk.Style()
         try:
             style.theme_use("clam")
         except Exception:
             pass
 
-        # Configure overall option database for dropdown listboxes to match our dark theme
-        self.tk.option_add("*TCombobox*Listbox.background", "#1C1C1C")
-        self.tk.option_add("*TCombobox*Listbox.foreground", "#F5F5F5")
-        self.tk.option_add("*TCombobox*Listbox.selectBackground", "#E0E0E0")
-        self.tk.option_add("*TCombobox*Listbox.selectForeground", "#080808")
+        # Thaumonomicon theme palette: Ancient parchment & dark blood leather
+        self.palette = {
+            "void": "#0E0907",
+            "panel": "#1B1310",
+            "raised": "#2A1D18",
+            "hover": "#3D2821",
+            "hairline": "#4A3229",
+            "text": "#D6C6B0",
+            "muted": "#9E8876",
+            "faint": "#695546",
+            "accent": "#C93636",
+            "accent_dim": "#7A1F1F",
+            "accent_bright": "#F54545",
+            "danger": "#B83B28",
+            "danger_dim": "#5E1D13",
+            "canvas": "#140D0A",
+            "log_fg": "#BAA793",
+            "status_fg": "#C4B29E",
+        }
+        pal = self.palette
+
+        # Dropdown listboxes option database
+        self.tk.option_add("*TCombobox*Listbox.background", pal["raised"])
+        self.tk.option_add("*TCombobox*Listbox.foreground", pal["text"])
+        self.tk.option_add("*TCombobox*Listbox.selectBackground", pal["accent_dim"])
+        self.tk.option_add("*TCombobox*Listbox.selectForeground", pal["text"])
         self.tk.option_add("*TCombobox*Listbox.font", ("Segoe UI", 10))
 
-        style.configure(".", font=("Segoe UI", 10), foreground="#F5F5F5")
-        style.configure("TFrame", background="#080808")
-        style.configure("Panel.TFrame", background="#121212")
-        style.configure("Card.TFrame", background="#1C1C1C", borderwidth=1, relief="solid", bordercolor="#2A2A2A")
-        style.configure("Divider.TFrame", background="#2A2A2A")
-        # Labels style configuration.
-        style.configure("AppTitle.TLabel", background="#121212", foreground="#F5F5F5", font=("Monotype Corsiva", 26, "italic", "bold"))
-        style.configure("AppSubtitle.TLabel", background="#121212", foreground="#7C7C7C", font=("Monotype Corsiva", 18, "italic", "bold"))
-        style.configure("SectionTitle.TLabel", background="#121212", foreground="#F5F5F5", font=("Segoe UI", 11, "bold"))
-        style.configure("Muted.TLabel", background="#121212", foreground="#7C7C7C")
-        style.configure("Link.TLabel", background="#121212", foreground="#E0E0E0", font=("Georgia", 10, "bold"))
-        style.configure("Status.TLabel", background="#080808", foreground="#CCCCCC")
+        style.configure(".", font=("Segoe UI", 10), foreground=pal["text"])
+        style.configure("TFrame", background=pal["void"])
+        style.configure("Panel.TFrame", background=pal["panel"])
+        style.configure("Card.TFrame", background=pal["raised"], borderwidth=1, relief="solid", bordercolor=pal["hairline"])
+        style.configure("Divider.TFrame", background=pal["hairline"])
 
-        # Card Specific Labels (inside the stats container)
-        style.configure("Card.TLabel", background="#1C1C1C", foreground="#F5F5F5", font=("Segoe UI", 10))
-        style.configure("CardMuted.TLabel", background="#1C1C1C", foreground="#7C7C7C", font=("Segoe UI", 10))
+        style.configure("AppTitle.TLabel", background=pal["panel"], foreground=pal["accent"], font=("Georgia", 15, "bold"))
+        style.configure("AppSubtitle.TLabel", background=pal["panel"], foreground=pal["muted"], font=("Georgia", 10))
+        style.configure("SectionTitle.TLabel", background=pal["panel"], foreground=pal["text"], font=("Segoe UI", 10, "bold"))
+        style.configure("Muted.TLabel", background=pal["panel"], foreground=pal["muted"])
+        style.configure("Link.TLabel", background=pal["panel"], foreground=pal["accent"], font=("Georgia", 10))
+        style.configure("Status.TLabel", background=pal["void"], foreground=pal["status_fg"])
 
-        # Standard Button (Matte Dark Charcoal)
+        style.configure("CardTitle.TLabel", background=pal["raised"], foreground=pal["muted"], font=("Segoe UI", 9, "bold"))
+        style.configure("Card.TLabel", background=pal["raised"], foreground=pal["text"], font=("Segoe UI", 10))
+        style.configure("CardMuted.TLabel", background=pal["raised"], foreground=pal["muted"], font=("Segoe UI", 10))
+
         style.configure("TButton",
-                        background="#161616",
-                        foreground="#F5F5F5",
-                        bordercolor="#2A2A2A",
-                        darkcolor="#161616",
-                        lightcolor="#161616",
-                        focuscolor="#E0E0E0",
+                        background=pal["raised"],
+                        foreground=pal["text"],
+                        bordercolor=pal["hairline"],
+                        darkcolor=pal["raised"],
+                        lightcolor=pal["raised"],
+                        focuscolor=pal["accent_dim"],
                         borderwidth=1,
-                        padding=(12, 8),
-                        font=("Segoe UI", 10, "bold"))
+                        anchor="center",
+                        padding=(10, 6),
+                        font=("Segoe UI", 10))
         style.map("TButton",
-                  background=[("active", "#262626"), ("disabled", "#080808")],
-                  foreground=[("disabled", "#7C7C7C")],
-                  bordercolor=[("active", "#404040"), ("disabled", "#2A2A2A")])
+                  background=[("active", pal["hover"]), ("disabled", pal["panel"])],
+                  foreground=[("active", pal["accent_bright"]), ("disabled", pal["faint"])],
+                  bordercolor=[("active", pal["accent_dim"]), ("disabled", pal["hairline"])])
 
-        # Primary Button (Stark White Block)
         style.configure("Primary.TButton",
-                        background="#E0E0E0",
-                        foreground="#080808",
-                        bordercolor="#E0E0E0",
-                        darkcolor="#E0E0E0",
-                        lightcolor="#E0E0E0",
-                        focuscolor="#FFFFFF",
+                        background=pal["accent_dim"],
+                        foreground="#FFFFFF",
+                        bordercolor=pal["accent"],
+                        darkcolor=pal["accent_dim"],
+                        lightcolor=pal["accent_dim"],
+                        focuscolor=pal["accent"],
                         borderwidth=1,
-                        padding=(12, 8),
+                        anchor="center",
+                        padding=(10, 6),
                         font=("Segoe UI", 10, "bold"))
         style.map("Primary.TButton",
-                  background=[("active", "#FFFFFF"), ("disabled", "#1C1C1C")],
-                  foreground=[("disabled", "#7C7C7C")],
-                  bordercolor=[("active", "#FFFFFF"), ("disabled", "#2A2A2A")])
+                  background=[("active", pal["accent"]), ("disabled", pal["panel"])],
+                  foreground=[("disabled", pal["faint"])],
+                  bordercolor=[("active", pal["accent_bright"]), ("disabled", pal["hairline"])])
 
-        # Danger Button (Slate Grey Warning)
         style.configure("Danger.TButton",
-                        background="#1C1C1C",
-                        foreground="#F5F5F5",
-                        bordercolor="#7C7C7C",
-                        darkcolor="#1C1C1C",
-                        lightcolor="#1C1C1C",
-                        focuscolor="#FFFFFF",
+                        background=pal["panel"],
+                        foreground=pal["danger"],
+                        bordercolor=pal["danger_dim"],
+                        darkcolor=pal["panel"],
+                        lightcolor=pal["panel"],
+                        focuscolor=pal["danger_dim"],
                         borderwidth=1,
-                        padding=(12, 8),
-                        font=("Segoe UI", 10, "bold"))
+                        anchor="center",
+                        padding=(10, 6),
+                        font=("Segoe UI", 10))
         style.map("Danger.TButton",
-                  background=[("active", "#2A2A2A"), ("disabled", "#1C1C1C")],
-                  foreground=[("disabled", "#7C7C7C")],
-                  bordercolor=[("active", "#E0E0E0"), ("disabled", "#2A2A2A")])
+                  background=[("active", pal["danger_dim"]), ("disabled", pal["panel"])],
+                  foreground=[("disabled", pal["faint"])],
+                  bordercolor=[("active", pal["danger"]), ("disabled", pal["hairline"])])
 
-        # Combobox
         style.configure("TCombobox",
-                        fieldbackground="#1C1C1C",
-                        background="#121212",
-                        foreground="#F5F5F5",
-                        bordercolor="#2A2A2A",
-                        darkcolor="#1C1C1C",
-                        lightcolor="#1C1C1C",
-                        arrowcolor="#7C7C7C",
+                        fieldbackground=pal["raised"],
+                        background=pal["panel"],
+                        foreground=pal["text"],
+                        bordercolor=pal["hairline"],
+                        darkcolor=pal["raised"],
+                        lightcolor=pal["raised"],
+                        arrowcolor=pal["muted"],
                         arrowsize=12,
                         padding=5)
         style.map("TCombobox",
-                  fieldbackground=[("readonly", "#1C1C1C"), ("active", "#262626")],
-                  bordercolor=[("focus", "#E0E0E0"), ("active", "#2A2A2A")])
+                  fieldbackground=[("readonly", pal["raised"]), ("active", pal["hover"])],
+                  bordercolor=[("focus", pal["accent_dim"]), ("active", pal["hairline"])])
 
-        # Entry
         style.configure("TEntry",
-                        fieldbackground="#1C1C1C",
-                        foreground="#F5F5F5",
-                        bordercolor="#2A2A2A",
-                        lightcolor="#1C1C1C",
-                        darkcolor="#1C1C1C",
+                        fieldbackground=pal["raised"],
+                        foreground=pal["text"],
+                        bordercolor=pal["hairline"],
+                        lightcolor=pal["raised"],
+                        darkcolor=pal["raised"],
+                        insertcolor=pal["accent"],
                         padding=6)
-        style.map("TEntry",
-                  bordercolor=[("focus", "#E0E0E0"), ("active", "#2A2A2A")])
+        style.map("TEntry", bordercolor=[("focus", pal["accent_dim"]), ("active", pal["hairline"])])
 
-        style.configure(
-            "TCheckbutton",
-            background="#121212",
-            foreground="#F5F5F5",
-            focuscolor="#121212",
-            font=("Segoe UI", 10),
-        )
-        style.map(
-            "TCheckbutton",
-            background=[("active", "#121212")],
-            foreground=[("disabled", "#7C7C7C")],
-        )
+        style.configure("TCheckbutton",
+                        background=pal["panel"],
+                        foreground=pal["text"],
+                        focuscolor=pal["panel"],
+                        font=("Segoe UI", 10))
+        style.map("TCheckbutton",
+                  background=[("active", pal["panel"])],
+                  foreground=[("disabled", pal["faint"])])
 
-        # Progressbar (Grayscale Mana bar)
         style.configure("Horizontal.TProgressbar",
-                        troughcolor="#1C1C1C",
-                        bordercolor="#2A2A2A",
-                        background="#E0E0E0",
-                        lightcolor="#E0E0E0",
-                        darkcolor="#E0E0E0",
-                        thickness=6)
+                        troughcolor=pal["raised"],
+                        bordercolor=pal["panel"],
+                        background=pal["accent"],
+                        lightcolor=pal["accent"],
+                        darkcolor=pal["accent"],
+                        thickness=4)
 
-    def _build_layout(self, tk, ttk) -> None:
+    def _build_layout(self, tk: Any, ttk: Any) -> None:
+        from .logbook_view import LogbookView
+
         assert self.tk is not None
-        outer = ttk.Frame(self.tk, style="TFrame")
-        outer.pack(fill="both", expand=True)
-
-        side = ttk.Frame(outer, style="Panel.TFrame", width=320)
-        side.pack(side="left", fill="y")
-        side.pack_propagate(False)
-
-        title_frame = ttk.Frame(side, style="Panel.TFrame")
-        title_frame.pack(anchor="w", padx=20, pady=(24, 18))
-        ttk.Label(title_frame, text="Thaumcraft", style="AppTitle.TLabel").pack(side="left")
-        ttk.Label(title_frame, text="Nexus", style="AppSubtitle.TLabel").pack(side="left", padx=(6, 0), pady=(4, 0))
-
-        self.buttons["read"] = self._button(side, self._button_text("read"), self._read_current_note, style="Primary.TButton")
-        self.buttons["read"].pack(fill="x", padx=20, pady=(0, 9))
-        self.buttons["apply"] = self._button(side, self._button_text("apply"), self._read_and_apply_current_note)
-        self.buttons["apply"].pack(fill="x", padx=20, pady=4)
-        self.buttons["wheelchair"] = self._button(side, self._button_text("wheelchair"), self._wheelchair_apply_notes)
-        self.buttons["wheelchair"].pack(fill="x", padx=20, pady=4)
-        self.stop_button = self._button(side, "\u505c\u6b62\u5f53\u524d\u4efb\u52a1", self._stop_current_task, style="Danger.TButton")
-        self.stop_button.pack(fill="x", padx=20, pady=(12, 4))
+        self.tk.configure(bg="#090705")
+        self.note_name = tk.StringVar(master=self.tk, value="笔记：—")
+        self.placement_count = tk.StringVar(master=self.tk, value="放置：—")
+        self.worker_label = tk.StringVar(master=self.tk, value="状态：空闲")
+        self.status = tk.StringVar(master=self.tk, value="准备就绪")
+        callbacks = [self._read_current_note, self._read_and_apply_current_note,
+                     self._wheelchair_apply_notes, self._save_solution]
+        actions = [(key, ACTION_LABELS[key], self._shortcut_display(self.shortcuts[key]), callback)
+                   for key, callback in zip(ACTION_ORDER, callbacks)]
+        actions += [("settings", "设置", "", self._open_settings),
+                    ("stop", "停止当前任务", "", self._stop_current_task)]
+        self.logbook = LogbookView(self.tk, resource_path(BACKGROUND_IMAGE, self.resource_root),
+                                   actions, self._show_details, self._open_github)
+        self.canvas = self.logbook.canvas
+        self.buttons = {key: action for key, action in self.logbook.actions.items() if key != "stop"}
+        self.stop_button = self.logbook.actions["stop"]
         self.stop_button.configure(state="disabled")
-        self.buttons["save"] = self._button(side, self._button_text("save"), self._save_solution)
-        self.buttons["save"].pack(fill="x", padx=20, pady=(16, 4))
-        self.buttons["settings"] = self._button(side, "设置", self._open_settings)
-        self.buttons["settings"].pack(fill="x", padx=20, pady=4)
-
-        stats = ttk.Frame(side, style="Panel.TFrame")
-        stats.pack(fill="x", padx=20, pady=(22, 0))
-        self.note_name = tk.StringVar(value="\u7b14\u8bb0\uff1a-")
-        self.placement_count = tk.StringVar(value="\u653e\u7f6e\uff1a-")
-        self.worker_label = tk.StringVar(value="\u72b6\u6001\uff1a\u7a7a\u95f2")
-        ttk.Label(stats, textvariable=self.note_name, style="Muted.TLabel").pack(anchor="w")
-        ttk.Label(stats, textvariable=self.placement_count, style="Muted.TLabel").pack(anchor="w", pady=(4, 0))
-        ttk.Label(stats, textvariable=self.worker_label, style="Muted.TLabel").pack(anchor="w", pady=(4, 0))
-
-        self.progress = ttk.Progressbar(side, mode="indeterminate", style="Horizontal.TProgressbar")
-        self.progress.pack(fill="x", padx=20, pady=(18, 0))
-
-        ttk.Frame(side, style="Panel.TFrame").pack(fill="both", expand=True)
-        self._build_github_link(side, tk, ttk)
-
-        main = ttk.Frame(outer, style="TFrame")
-        main.pack(side="left", fill="both", expand=True)
-
-        canvas_card = ttk.Frame(main, style="Card.TFrame")
-        canvas_card.pack(fill="both", expand=True, padx=14, pady=(14, 8))
-        self.canvas = tk.Canvas(canvas_card, bg="#050505", highlightthickness=0)
-        self.canvas.pack(fill="both", expand=True)
-        self.canvas.create_text(28, 28, text="\u7b49\u5f85\u8bfb\u53d6\u7814\u7a76\u7b14\u8bb0", fill="#7C7C7C", anchor="nw", font=("Segoe UI", 14))
-        self.canvas.bind("<Configure>", lambda _event: self._schedule_canvas_refresh())
-
-        bottom = ttk.Frame(main, style="TFrame")
-        bottom.pack(fill="x", padx=14, pady=(0, 12))
-        self.status = tk.StringVar()
-        ttk.Label(bottom, textvariable=self.status, style="Status.TLabel", anchor="w").pack(fill="x", pady=(0, 6))
-        self.log_text = tk.Text(
-            bottom,
-            height=6,
-            bg="#050505",
-            fg="#CCCCCC",
-            insertbackground="#CCCCCC",
-            relief="flat",
-            highlightthickness=1,
-            highlightbackground="#2A2A2A",
-            wrap="word",
-            font=("Consolas", 10),
-        )
-        self.log_text.pack(fill="x")
-        self.log_text.configure(state="disabled")
-
+        self.buttons["save"].configure(state="disabled")
+        for variable in (self.note_name, self.placement_count, self.worker_label, self.status):
+            variable.trace_add("write", lambda *_: self._update_canvas_status_texts())
         self._bind_shortcuts()
 
-    def _button(self, parent, text: str, command, style: str = "TButton"):
-        from tkinter import ttk
-
-        return ttk.Button(parent, text=text, command=command, style=style)
-
-    def _build_github_link(self, parent, tk, ttk) -> None:
-        footer = ttk.Frame(parent, style="Panel.TFrame")
-        footer.pack(side="bottom", fill="x", padx=20, pady=(0, 18))
-
-        icon_path = self.resource_root / GITHUB_ICON
-        self.github_normal_photo = self._load_github_icon(icon_path, (124, 124, 124))
-        self.github_hover_photo = self._load_github_icon(icon_path, (245, 245, 245))
-
-        icon = tk.Label(footer, image=self.github_normal_photo, bg="#121212", bd=0, cursor="hand2")
-        icon.pack(side="left")
-
-        label = tk.Label(footer, text="GitHub", fg="#7C7C7C", bg="#121212", font=("Georgia", 11, "italic", "bold"), bd=0, cursor="hand2")
-        label.pack(side="left", padx=(8, 0))
-
-        def on_enter(_event) -> None:
-            icon.configure(image=self.github_hover_photo)
-            label.configure(fg="#F5F5F5")
-
-        def on_leave(_event) -> None:
-            icon.configure(image=self.github_normal_photo)
-            label.configure(fg="#7C7C7C")
-
-        for widget in (footer, icon, label):
-            widget.bind("<Enter>", on_enter)
-            widget.bind("<Leave>", on_leave)
-            widget.bind("<Button-1>", lambda _event: self._open_github())
+    def _update_canvas_status_texts(self) -> None:
+        if self.logbook is not None:
+            self.logbook.update_status(
+                note=self.note_name.get().removeprefix("笔记："),
+                placements=self.placement_count.get().removeprefix("放置："),
+                worker=self.worker_label.get().removeprefix("状态："),
+                status=self.status.get(),
+            )
+        self._refresh_details()
 
     def _open_github(self) -> None:
         import webbrowser
         webbrowser.open_new_tab(GITHUB_URL)
 
-    def _load_github_icon(self, icon_path: Path, color: tuple[int, int, int]):
-        from PIL import Image, ImageTk
-        img = Image.open(icon_path).convert("RGBA")
-        solid = Image.new("RGBA", img.size, color + (255,))
-        tinted = Image.composite(solid, Image.new("RGBA", img.size, (0, 0, 0, 0)), img.split()[3])
-        tinted = tinted.resize((20, 20), Image.Resampling.LANCZOS)
-        return ImageTk.PhotoImage(tinted)
+    def _show_details(self) -> None:
+        import tkinter as tk
+        from tkinter import scrolledtext
+        if self.details_window is not None and self.details_window.winfo_exists():
+            self._refresh_details()
+            self.details_window.lift()
+            return
+        dialog = tk.Toplevel(self.tk)
+        self.details_window = dialog
+        dialog.title("研究记录 · 任务详情")
+        dialog.geometry("620x380")
+        dialog.minsize(460, 260)
+        dialog.transient(self.tk)
+        text = scrolledtext.ScrolledText(dialog, bg="#211710", fg="#dbc8a8", insertbackground="#dbc8a8",
+                                        wrap="word", font=("Microsoft YaHei", 10), padx=18, pady=16)
+        text.pack(fill="both", expand=True)
+        self.details_text = text
+        self._refresh_details()
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
+
+    def _refresh_details(self) -> None:
+        text = self.details_text
+        if text is None or not text.winfo_exists():
+            return
+        top, bottom = text.yview()
+        text.configure(state="normal")
+        text.delete("1.0", "end")
+        text.insert("1.0", "当前笔记：" + self.logbook.note + "\n\n" + self.status.get() +
+                    "\n\n" + "\n".join(self.log_lines))
+        text.configure(state="disabled")
+        if bottom >= 1.0:
+            text.see("end")
+        else:
+            text.yview_moveto(top)
 
     def _button_text(self, action: str) -> str:
         shortcut = self._shortcut_display(self.shortcuts.get(action, ""))
@@ -470,30 +442,44 @@ class ThaumNexusGui:
     def _bind_shortcuts(self) -> None:
         if self.tk is None:
             return
+        for sequence, command_id in self.canvas_shortcut_bindings.items():
+            self.tk.unbind_class(self.canvas_shortcut_tag, sequence)
+            self.tk.deletecommand(command_id)
+        self.canvas_shortcut_bindings.clear()
+        if self.canvas is not None:
+            tags = self.canvas.bindtags()
+            if self.canvas_shortcut_tag not in tags:
+                self.canvas.bindtags((self.canvas_shortcut_tag, *tags))
         for sequence in self.shortcut_bindings:
             try:
                 self.tk.unbind(sequence)
             except Exception:
                 pass
         self.shortcut_bindings = []
-        callbacks = {
-            "read": self._read_current_note,
-            "apply": self._read_and_apply_current_note,
-            "wheelchair": self._wheelchair_apply_notes,
-            "save": self._save_solution,
-        }
-        for action, callback in callbacks.items():
+        for action in ACTION_ORDER:
             sequence = self.shortcuts.get(action)
             if not sequence:
                 continue
-            self.tk.bind(sequence, lambda _event, cb=callback: cb())
+            self.tk.bind(sequence, lambda _event, key=action: self._invoke_action(key))
+            if self.canvas is not None:
+                command_id = self.tk.bind_class(
+                    self.canvas_shortcut_tag, sequence,
+                    lambda _event, key=action: self._invoke_action(key),
+                )
+                self.canvas_shortcut_bindings[sequence] = command_id
             self.shortcut_bindings.append(sequence)
+
+    def _invoke_action(self, action: str) -> str:
+        button = self.buttons.get(action)
+        if button is not None:
+            button.invoke()
+        return "break"
 
     def _refresh_shortcut_labels(self) -> None:
         for action in ACTION_ORDER:
             button = self.buttons.get(action)
-            if button is not None:
-                button.configure(text=self._button_text(action))
+            if button is not None and hasattr(button, "set_shortcut_text"):
+                button.set_shortcut_text(self._shortcut_display(self.shortcuts.get(action, "")))
 
     def _shortcut_display(self, sequence: str) -> str:
         if not sequence:
@@ -503,7 +489,7 @@ class ThaumNexusGui:
         text = text.replace("-", "+")
         return text
 
-    def _event_to_shortcut(self, event) -> str | None:
+    def _event_to_shortcut(self, event: Any) -> str | None:
         key = str(getattr(event, "keysym", "") or "")
         if not key or key in {"Shift_L", "Shift_R", "Control_L", "Control_R", "Alt_L", "Alt_R"}:
             return None
@@ -527,7 +513,7 @@ class ThaumNexusGui:
 
         dialog = tk.Toplevel(self.tk)
         dialog.title("设置")
-        dialog.configure(bg="#121212")
+        dialog.configure(bg=self.palette["panel"])
         dialog.resizable(False, False)
         dialog.transient(self.tk)
         dialog.grab_set()
@@ -584,7 +570,7 @@ class ThaumNexusGui:
         speed_verify_entry = ttk.Entry(container, textvariable=speed_verify_var, width=18)
         speed_verify_entry.grid(row=row, column=1, sticky="w", padx=(16, 12), pady=5)
 
-        def apply_speed_preset(_event=None) -> None:
+        def apply_speed_preset(_event: Any = None) -> None:
             preset = self._speed_preset_from_display(speed_preset_var.get())
             if preset == "custom":
                 return
@@ -593,7 +579,7 @@ class ThaumNexusGui:
             speed_verify_var.set(str(config["verifyDelayMs"]))
             hint.set(f"已选择摆放速度：{config['label']}。")
 
-        def mark_custom_speed(_event=None) -> None:
+        def mark_custom_speed(_event: Any = None) -> None:
             speed_preset_var.set(self._speed_preset_display("custom"))
 
         speed_combo.bind("<<ComboboxSelected>>", apply_speed_preset)
@@ -618,14 +604,14 @@ class ThaumNexusGui:
         row += 1
         ttk.Label(
             container,
-            text="关闭时优先使用库存中数量充足的要素；开启后优先最少放置，缺少的复合要素会自动递归合成。",
+            text="关闭时优先使用库存中数量充足的要素；开启后先保证最少放置，格数相同时会均衡基础要素库存并减少合成。",
             style="Muted.TLabel",
         ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
         target_pid_var = tk.StringVar(value=self.target_pid)
         process_var = tk.StringVar()
         row += 1
-        ttk.Label(container, text="\u76ee\u6807 JVM \u8fdb\u7a0b\uff08\u4ec5\u672c\u6b21\u8fd0\u884c\uff09", style="SectionTitle.TLabel").grid(
+        ttk.Label(container, text="目标 JVM 进程（仅本次运行）", style="SectionTitle.TLabel").grid(
             row=row,
             column=0,
             columnspan=3,
@@ -635,13 +621,13 @@ class ThaumNexusGui:
         row += 1
         ttk.Label(
             container,
-            text="\u7559\u7a7a\u4e3a\u81ea\u52a8\u68c0\u6d4b\uff1bPID \u4f1a\u5728\u6e38\u620f\u91cd\u542f\u540e\u53d8\u5316\uff0c\u624b\u52a8\u9009\u62e9\u4ec5\u5bf9\u672c\u6b21\u8fd0\u884c\u751f\u6548\u3002",
+            text="留空为自动检测；PID 会在游戏重启后变化，手动选择仅对本次运行生效。",
             style="Muted.TLabel",
         ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 8))
         row += 1
         ttk.Label(container, text="PID", style="Muted.TLabel").grid(row=row, column=0, sticky="w", pady=5)
         ttk.Entry(container, textvariable=target_pid_var, width=18).grid(row=row, column=1, sticky="w", padx=(16, 12), pady=5)
-        ttk.Button(container, text="\u6e05\u7a7a", command=lambda: target_pid_var.set("")).grid(row=row, column=2, sticky="e", pady=5)
+        ttk.Button(container, text="清空", command=lambda: target_pid_var.set("")).grid(row=row, column=2, sticky="e", pady=5)
         row += 1
         process_combo = ttk.Combobox(container, textvariable=process_var, width=58, state="readonly")
         process_combo.grid(row=row, column=0, columnspan=2, sticky="we", pady=5)
@@ -660,14 +646,14 @@ class ThaumNexusGui:
             process_combo.configure(values=values)
             if values:
                 process_var.set(values[0])
-                hint.set(f"\u5df2\u627e\u5230 {len(values)} \u4e2a JVM\uff0c\u9009\u4e2d\u540e\u70b9\u51fb\u201c\u4f7f\u7528\u9009\u4e2d\u201d\u3002")
+                hint.set(f"已找到 {len(values)} 个 JVM，选中后点击“使用选中”。")
             else:
                 process_var.set("")
-                hint.set("\u6ca1\u6709\u627e\u5230\u53ef\u89c1 JVM\uff1b\u8bf7\u786e\u8ba4\u6e38\u620f\u5df2\u542f\u52a8\uff0c\u6216\u624b\u52a8\u8f93\u5165 PID\u3002")
+                hint.set("没有找到可见 JVM；请确认游戏已启动，或手动输入 PID。")
 
-        ttk.Button(container, text="\u5237\u65b0 JVM", command=refresh_processes).grid(row=row, column=2, sticky="e", pady=5)
+        ttk.Button(container, text="刷新 JVM", command=refresh_processes).grid(row=row, column=2, sticky="e", pady=5)
         row += 1
-        ttk.Button(container, text="\u4f7f\u7528\u9009\u4e2d", command=apply_selected_process).grid(row=row, column=2, sticky="e", pady=5)
+        ttk.Button(container, text="使用选中", command=apply_selected_process).grid(row=row, column=2, sticky="e", pady=5)
         process_combo.bind("<<ComboboxSelected>>", lambda _event: apply_selected_process())
         row += 1
 
@@ -697,7 +683,7 @@ class ThaumNexusGui:
                 return False
             target = target_pid_var.get().strip()
             if target and not target.isdigit():
-                hint.set("PID \u53ea\u80fd\u662f\u6570\u5b57\uff1b\u7559\u7a7a\u8868\u793a\u81ea\u52a8\u68c0\u6d4b\u3002")
+                hint.set("PID 只能是数字；留空表示自动检测。")
                 return False
             self.target_pid = target
             self.placement_speed = speed
@@ -726,16 +712,16 @@ class ThaumNexusGui:
         buttons = ttk.Frame(container, style="Panel.TFrame")
         buttons.grid(row=row, column=0, columnspan=3, sticky="e", pady=(14, 0))
         ttk.Button(buttons, text="恢复默认", command=lambda: self._reset_shortcuts(value_vars, hint)).pack(side="left", padx=(0, 8))
-        ttk.Button(buttons, text="\u4fdd\u5b58\u5e76\u5173\u95ed", command=save_and_close).pack(side="left", padx=(0, 8))
+        ttk.Button(buttons, text="保存并关闭", command=save_and_close).pack(side="left", padx=(0, 8))
         ttk.Button(buttons, text="关闭", command=dialog.destroy).pack(side="left")
 
         dialog.bind("<Escape>", lambda _event: dialog.destroy())
         dialog.focus_set()
 
-    def _capture_shortcut(self, dialog, hint, value_vars: dict[str, Any], action: str) -> None:
+    def _capture_shortcut(self, dialog: Any, hint: Any, value_vars: dict[str, Any], action: str) -> None:
         hint.set(f"请按下“{ACTION_LABELS[action]}”的新快捷键……")
 
-        def on_key(event) -> str:
+        def on_key(event: Any) -> str:
             sequence = self._event_to_shortcut(event)
             if sequence is None:
                 return "break"
@@ -756,7 +742,7 @@ class ThaumNexusGui:
         dialog.bind("<KeyPress>", on_key)
         dialog.focus_force()
 
-    def _reset_shortcuts(self, value_vars: dict[str, Any], hint) -> None:
+    def _reset_shortcuts(self, value_vars: dict[str, Any], hint: Any) -> None:
         self.shortcuts = dict(DEFAULT_SHORTCUTS)
         self._save_shortcuts()
         self._bind_shortcuts()
@@ -767,16 +753,16 @@ class ThaumNexusGui:
 
     def _read_current_note(self) -> None:
         if self.busy:
-            self._set_status("\u5df2\u6709\u4efb\u52a1\u5728\u8fd0\u884c\uff0c\u8bf7\u5148\u7b49\u5f85\u6216\u505c\u6b62\u5f53\u524d\u4efb\u52a1\u3002")
+            self._set_status("已有任务在运行，请先等待或停止当前任务。")
             return
 
         def task(stop_event: threading.Event, emit: Callable[[str, Any], None]) -> dict[str, Any]:
             from .client_bridge import read_and_solve_current_note
 
-            emit("log", "\u8bfb\u53d6\u5f53\u524d\u7814\u7a76\u53f0\u7b14\u8bb0\u2026\u2026")
+            emit("log", "读取当前研究台笔记……")
             pid = self._bridge_pid()
             if pid:
-                emit("log", f"\u4f7f\u7528\u76ee\u6807 JVM PID\uff1a{pid}")
+                emit("log", f"使用目标 JVM PID：{pid}")
             solve_mode = normalize_solver_mode(self.solver_mode)
             emit("log", f"求解策略：{self._solver_mode_summary()}")
             result = read_and_solve_current_note(
@@ -791,16 +777,16 @@ class ThaumNexusGui:
 
     def _read_and_apply_current_note(self) -> None:
         if self.busy:
-            self._set_status("\u5df2\u6709\u4efb\u52a1\u5728\u8fd0\u884c\uff0c\u8bf7\u5148\u7b49\u5f85\u6216\u505c\u6b62\u5f53\u524d\u4efb\u52a1\u3002")
+            self._set_status("已有任务在运行，请先等待或停止当前任务。")
             return
 
         def task(stop_event: threading.Event, emit: Callable[[str, Any], None]) -> dict[str, Any]:
             from .client_bridge import read_solve_and_apply_current_note
 
-            emit("log", "\u8bfb\u53d6\u3001\u6c42\u89e3\u5e76\u81ea\u52a8\u653e\u7f6e\u5f53\u524d\u7b14\u8bb0\u2026\u2026")
+            emit("log", "读取、求解并自动放置当前笔记……")
             pid = self._bridge_pid()
             if pid:
-                emit("log", f"\u4f7f\u7528\u76ee\u6807 JVM PID\uff1a{pid}")
+                emit("log", f"使用目标 JVM PID：{pid}")
             delay_ms, verify_delay_ms = self._placement_speed_values()
             solve_mode = normalize_solver_mode(self.solver_mode)
             emit("log", f"求解策略：{self._solver_mode_summary()}")
@@ -819,19 +805,19 @@ class ThaumNexusGui:
 
     def _wheelchair_apply_notes(self) -> None:
         if self.busy:
-            self._set_status("\u5df2\u6709\u4efb\u52a1\u5728\u8fd0\u884c\uff0c\u8bf7\u5148\u7b49\u5f85\u6216\u505c\u6b62\u5f53\u524d\u4efb\u52a1\u3002")
+            self._set_status("已有任务在运行，请先等待或停止当前任务。")
             return
 
         def task(stop_event: threading.Event, emit: Callable[[str, Any], None]) -> dict[str, Any]:
             from .client_bridge import solve_all_inventory_notes
 
             def progress(payload: dict[str, Any]) -> None:
-                emit("log", str(payload.get("message") or payload.get("event") or "\u8f6e\u6905\u6a21\u5f0f\u8fdb\u5ea6\u66f4\u65b0"))
+                emit("progress", payload)
 
-            emit("log", "\u8f6e\u6905\u6a21\u5f0f\u542f\u52a8\uff1a\u5f00\u59cb\u626b\u63cf\u80cc\u5305\u672a\u89e3\u7b14\u8bb0\u3002")
+            emit("log", "轮椅模式启动：开始扫描背包未解笔记。")
             pid = self._bridge_pid()
             if pid:
-                emit("log", f"\u4f7f\u7528\u76ee\u6807 JVM PID\uff1a{pid}")
+                emit("log", f"使用目标 JVM PID：{pid}")
             delay_ms, verify_delay_ms = self._placement_speed_values()
             solve_mode = normalize_solver_mode(self.solver_mode)
             emit("log", f"求解策略：{self._solver_mode_summary()}")
@@ -860,12 +846,13 @@ class ThaumNexusGui:
     ) -> None:
         assert self.tk is not None
         self.worker_queue = queue.Queue()
+        self.batch_total = 0
         self.stop_event = threading.Event()
         self.busy = True
         self.cancellable_busy = cancellable
         self._set_busy_ui(label, cancellable=cancellable)
-        self._set_status(f"{label}\u2026\u2026")
-        self._append_log(f"\u5f00\u59cb\uff1a{label}")
+        self._set_status(f"{label}……")
+        self._append_log(f"开始：{label}")
 
         def emit(kind: str, payload: Any) -> None:
             assert self.worker_queue is not None
@@ -893,6 +880,20 @@ class ThaumNexusGui:
             if kind == "log":
                 self._append_log(str(payload))
                 self._set_status(str(payload))
+            elif kind == "progress":
+                if "unsolvedCount" in payload:
+                    self.batch_total = int(payload["unsolvedCount"])
+                if payload.get("event") == "inventory-final-scan" and self.worker_label is not None:
+                    self.worker_label.set("状态：正在确认背包")
+                elif "iteration" in payload and self.worker_label is not None:
+                    index = int(payload["iteration"]) + 1
+                    total = f" / {self.batch_total}" if self.batch_total else ""
+                    self.worker_label.set(f"状态：第 {index}{total} 张")
+                if payload.get("researchKey") and self.note_name is not None:
+                    self.note_name.set(f"笔记：{payload['researchKey']}")
+                message = str(payload.get("message") or payload.get("event") or "轮椅模式进度更新")
+                self._append_log(message)
+                self._set_status(message)
             elif kind == "done":
                 self._handle_worker_done(payload)
             elif kind == "error":
@@ -913,8 +914,8 @@ class ThaumNexusGui:
                     note_label=result.note.research_key or result.note.board.name,
                     payload=data,
                 )
-                self._set_status(f"\u8bfb\u53d6\u5b8c\u6210\uff1a\u9700\u8981\u653e\u7f6e {len(result.solution.placements)} \u4e2a\u8981\u7d20\u3002\u6587\u4ef6\uff1a{self.solution_image_path}")
-                self._append_log("\u8bfb\u53d6\u5b8c\u6210\u3002")
+                self._set_status(f"读取完成：需要放置 {len(result.solution.placements)} 个要素。文件：{self.solution_image_path}")
+                self._append_log("读取完成。")
             elif kind == "apply":
                 result = payload["result"]
                 data = result.to_dict()
@@ -927,18 +928,22 @@ class ThaumNexusGui:
                 sent = int(result.apply_payload.get("placementsSent", 0))
                 skipped = int(result.apply_payload.get("placementsSkipped", 0))
                 combines = int(result.apply_payload.get("combinesSent", 0))
-                self._set_status(f"\u81ea\u52a8\u653e\u7f6e\u5b8c\u6210\uff1a\u5408\u6210 {combines} \u6b21\uff0c\u653e\u7f6e {sent} \u4e2a\uff0c\u8df3\u8fc7 {skipped} \u4e2a\u3002")
-                self._append_log("\u81ea\u52a8\u653e\u7f6e\u5b8c\u6210\u3002")
+                self._set_status(f"自动放置完成：合成 {combines} 次，放置 {sent} 个，跳过 {skipped} 个。")
+                self._append_log("自动放置完成。")
             elif kind == "wheelchair":
                 batch = payload["payload"]
                 result_json = payload["resultJson"]
                 status = str(batch.get("status") or "ok")
                 solved = int(batch.get("solvedOrAttempted", 0) or 0)
-                message = str(batch.get("message") or "\u8f6e\u6905\u6a21\u5f0f\u7ed3\u675f")
-                self._set_status(f"\u8f6e\u6905\u6a21\u5f0f{self._status_cn(status)}\uff1a\u5c1d\u8bd5\u5904\u7406 {solved} \u5f20\u3002{message} \u6587\u4ef6\uff1a{result_json}")
-                self._append_log(f"\u8f6e\u6905\u6a21\u5f0f\u7ed3\u675f\uff1a{message}")
+                message = str(batch.get("message") or "轮椅模式结束")
+                self._set_status(f"轮椅模式{self._status_cn(status)}：尝试处理 {solved} 张。{message} 文件：{result_json}")
+                self._append_log(f"轮椅模式结束：{message}")
+                if self.logbook:
+                    page = "success" if status == "ok" else ("cancelled" if status == "cancelled" else "error")
+                    self.logbook.preview = None
+                    self.logbook.set_page(page, f"已处理 {solved} 张。{message}")
             else:
-                self._set_status("\u4efb\u52a1\u5b8c\u6210\u3002")
+                self._set_status("任务完成。")
         finally:
             self._finish_worker_ui()
 
@@ -946,51 +951,54 @@ class ThaumNexusGui:
         from .client_bridge import OperationCancelled
 
         if isinstance(exc, OperationCancelled):
-            self._set_status("\u4efb\u52a1\u5df2\u505c\u6b62\u3002")
-            self._append_log("\u4efb\u52a1\u5df2\u505c\u6b62\u3002")
+            if self.logbook:
+                self.logbook.set_page("cancelled", "已停止当前操作，可以重新读取笔记。")
+            self._set_status("任务已停止。")
+            self._append_log("任务已停止。")
             self._finish_worker_ui()
             return
 
         error_text, error_json = self._write_error_report(exc)
-        self._set_status(f"\u4efb\u52a1\u5931\u8d25\uff1a{self._short_error(exc)}")
-        self._append_log(f"\u5931\u8d25\uff1a{self._short_error(exc)}")
-        self._append_log(f"\u5b8c\u6574\u9519\u8bef\u5df2\u5199\u5165\uff1a{error_text}")
-        self._append_log(f"\u8bca\u65ad JSON\uff1a{error_json}")
+        if self.logbook:
+            self.logbook.set_page("error", self._short_error(exc))
+        self._set_status(f"任务失败：{self._short_error(exc)}")
+        self._append_log(f"失败：{self._short_error(exc)}")
+        self._append_log(f"完整错误已写入：{error_text}")
+        self._append_log(f"诊断 JSON：{error_json}")
         self._finish_worker_ui()
 
     def _stop_current_task(self) -> None:
         if not self.busy or self.stop_event is None:
             return
         self.stop_event.set()
-        self._set_status("\u6b63\u5728\u7acb\u5373\u505c\u6b62\u2026\u2026")
-        self._append_log("\u5df2\u53d1\u9001\u7acb\u5373\u505c\u6b62\u8bf7\u6c42\u3002")
+        self._set_status("正在停止，等待当前操作确认……")
+        self._append_log("已发送立即停止请求。")
         if self.stop_button is not None:
             self.stop_button.configure(state="disabled")
 
     def _set_busy_ui(self, label: str, *, cancellable: bool) -> None:
         for key, button in self.buttons.items():
-            if key != "save":
-                button.configure(state="disabled")
+            button.configure(state="normal" if key == "save" and self.rendered is not None else "disabled")
         if self.stop_button is not None:
             self.stop_button.configure(state="normal" if cancellable else "disabled")
         if self.worker_label is not None:
-            self.worker_label.set(f"\u72b6\u6001\uff1a{label}")
-        if self.progress is not None:
-            self.progress.start(12)
+            self.worker_label.set(f"状态：{label}")
+        if self.logbook:
+            self.logbook.set_page("busy", label)
 
     def _finish_worker_ui(self) -> None:
         self.busy = False
         self.cancellable_busy = False
-        for button in self.buttons.values():
-            button.configure(state="normal")
+        for key, button in self.buttons.items():
+            button.configure(state="disabled" if key == "save" and self.rendered is None else "normal")
         if self.stop_button is not None:
             self.stop_button.configure(state="disabled")
         if self.worker_label is not None:
-            self.worker_label.set("\u72b6\u6001\uff1a\u7a7a\u95f2")
-        if self.progress is not None:
-            self.progress.stop()
+            state = self.logbook.state if self.logbook else "idle"
+            label = {"success": "完成", "error": "失败", "cancelled": "已停止"}.get(state, "空闲")
+            self.worker_label.set(f"状态：{label}")
 
-    def _show_solution(self, *, board, solution, note_label: str, payload: dict[str, Any]) -> None:
+    def _show_solution(self, *, board: Any, solution: Any, note_label: str, payload: dict[str, Any]) -> None:
         self.rendered = self.board_renderer.render(board, solution)
         out_dir = self.runtime_root
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -1000,22 +1008,24 @@ class ThaumNexusGui:
         solution_json.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         self.solution_payload = payload
         if self.note_name is not None:
-            self.note_name.set(f"\u7b14\u8bb0\uff1a{note_label}")
+            self.note_name.set(f"笔记：{note_label}")
         if self.placement_count is not None:
-            self.placement_count.set(f"\u653e\u7f6e\uff1a{len(solution.placements)}")
-        self._refresh_canvas_image()
+            self.placement_count.set(f"放置：{len(solution.placements)}")
+        if self.logbook:
+            self.logbook.set_page("success", preview=self.board_renderer.render(board, solution, paper=True))
+        self.buttons["save"].configure(state="normal")
 
     def _save_solution(self) -> None:
         from tkinter import filedialog
 
         if self.rendered is None:
-            self._set_status("\u8fd8\u6ca1\u6709\u7b54\u6848\u56fe\u3002\u8bf7\u5148\u8bfb\u53d6\u5f53\u524d\u7b14\u8bb0\u3002")
+            self._set_status("还没有答案图。请先读取当前笔记。")
             return
         default = "current_solution.png"
         if self.solution_image_path is not None:
             default = self.solution_image_path.name
         path = filedialog.asksaveasfilename(
-            title="\u4fdd\u5b58\u7b54\u6848\u56fe",
+            title="保存答案图",
             initialfile=default,
             defaultextension=".png",
             filetypes=[("PNG", "*.png"), ("All files", "*.*")],
@@ -1023,52 +1033,8 @@ class ThaumNexusGui:
         if not path:
             return
         self.rendered.save(path)
-        self._set_status(f"\u7b54\u6848\u56fe\u5df2\u4fdd\u5b58\uff1a{path}")
-        self._append_log(f"\u7b54\u6848\u56fe\u5df2\u4fdd\u5b58\uff1a{path}")
-
-    def _refresh_canvas_image(self) -> None:
-        if self.canvas is None or self.rendered is None:
-            return
-        from PIL import Image, ImageTk
-
-        image = self.rendered
-        canvas_w = self.canvas.winfo_width()
-        canvas_h = self.canvas.winfo_height()
-        if canvas_w <= 1:
-            canvas_w = 820
-        if canvas_h <= 1:
-            canvas_h = 560
-
-        max_w = max(1, canvas_w - 28)
-        max_h = max(1, canvas_h - 28)
-        self.display_scale = self._display_scale(image, max_w, max_h)
-        display_w = max(1, round(image.width * self.display_scale))
-        display_h = max(1, round(image.height * self.display_scale))
-        cache_key = (id(image), display_w, display_h)
-        if cache_key != self.canvas_image_cache_key or self.photo is None:
-            display = image.resize((display_w, display_h), Image.Resampling.LANCZOS)
-            self.photo = ImageTk.PhotoImage(display)
-            self.canvas_image_cache_key = cache_key
-        self.canvas.delete("all")
-        self.canvas.create_image(canvas_w // 2, canvas_h // 2, image=self.photo, anchor="center")
-
-    def _display_scale(self, image, max_w: int, max_h: int) -> float:
-        return min(1.0, max(1, max_w) / image.width, max(1, max_h) / image.height)
-
-    def _schedule_canvas_refresh(self) -> None:
-        if self.tk is None:
-            self._refresh_canvas_image()
-            return
-        if self.canvas_refresh_job is not None:
-            try:
-                self.tk.after_cancel(self.canvas_refresh_job)
-            except Exception:
-                pass
-        self.canvas_refresh_job = self.tk.after(80, self._run_scheduled_canvas_refresh)
-
-    def _run_scheduled_canvas_refresh(self) -> None:
-        self.canvas_refresh_job = None
-        self._refresh_canvas_image()
+        self._set_status(f"答案图已保存：{path}")
+        self._append_log(f"答案图已保存：{path}")
 
     def _write_runtime_json(self, name: str, payload: dict[str, Any]) -> Path:
         out_dir = self.runtime_root
@@ -1096,15 +1062,12 @@ class ThaumNexusGui:
             self.status.set(text)
 
     def _append_log(self, text: str) -> None:
-        if self.log_text is None:
-            return
-        self.log_text.configure(state="normal")
-        self.log_text.insert("end", text.strip() + "\n")
-        self.log_text.see("end")
-        self.log_text.configure(state="disabled")
+        self.log_lines.append(text)
+        self.log_lines = self.log_lines[-200:]
+        self._refresh_details()
 
     def _status_cn(self, status: str) -> str:
-        return {"ok": "\u5b8c\u6210", "cancelled": "\u5df2\u505c\u6b62", "incomplete": "\u672a\u5b8c\u5168\u5b8c\u6210", "error": "\u5931\u8d25"}.get(status, "\u7ed3\u675f")
+        return {"ok": "完成", "cancelled": "已停止", "incomplete": "未完全完成", "error": "失败"}.get(status, "结束")
 
     def _short_error(self, exc: Exception) -> str:
         message = str(exc).strip().replace("\r", "\n")

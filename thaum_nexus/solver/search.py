@@ -7,7 +7,7 @@ from typing import Mapping
 
 from thaum_nexus.data_model import BoardState, CellKind, ConnectionPath, HexCoord, Solution, hex_neighbors
 from thaum_nexus.knowledge_base import KnowledgeBase
-from thaum_nexus.resources import resource_aware_placement_cost
+from thaum_nexus.resources import plan_resource_usage, resource_aware_placement_cost
 from thaum_nexus.solver.board import connected_components, root_component_ids
 
 
@@ -39,6 +39,18 @@ class _PathSearchContext:
     connectable_by_aspect: dict[str, frozenset[str]]
     direct_candidates_by_aspect: dict[str, tuple[tuple[str, bool], ...]]
     placement_cost_by_aspect: dict[str, float]
+
+
+@dataclass(frozen=True, order=True)
+class _MinimalSolutionRank:
+    placement_count: int
+    shortage_count: int
+    synthesis_steps: int
+    primal_spread: int
+    negative_min_primal: int
+    inventory_pressure: float
+    depth_sum: int
+    aspect_signature: tuple[tuple[HexCoord, int], ...]
 
 
 def solve(board: BoardState, kb: KnowledgeBase, config: SearchConfig | None = None) -> Solution:
@@ -132,18 +144,27 @@ def _solve_minimal_placements(
     expensive for normal research-note boards.  This bounded search improves
     on the old single-pass greedy behavior by comparing all root-component
     connection orders and several deterministic path-diversification hints.
-    Inventory is only a search hint; final candidates are always ranked by
-    total placement count first.
+    Total placement count remains the primary objective.  When several
+    candidates use the same number of cells, current stock, synthesis work,
+    and primal-aspect balance decide the winner.
     """
 
     candidates = [_solve_greedy(board, kb, config)]
-    for candidate_config in _minimal_candidate_configs(kb, config):
+    for candidate_config in _minimal_candidate_configs(board, kb, config):
         try:
             candidates.append(_solve_greedy(board, kb, candidate_config))
         except NoSolutionError:
             continue
 
-    best = min(candidates, key=lambda solution: _minimal_solution_key(kb, solution.placements))
+    best = min(
+        candidates,
+        key=lambda solution: _minimal_solution_key(
+            board,
+            kb,
+            solution.placements,
+            config.aspect_inventory,
+        ),
+    )
     best, exhausted = _search_connection_orders(
         board,
         kb,
@@ -181,6 +202,7 @@ def _solve_minimal_placements(
 
 
 def _minimal_candidate_configs(
+    board: BoardState,
     kb: KnowledgeBase,
     config: SearchConfig,
 ) -> tuple[SearchConfig, ...]:
@@ -190,6 +212,25 @@ def _minimal_candidate_configs(
             SearchConfig(
                 max_iterations=config.max_iterations,
                 aspect_inventory=config.aspect_inventory,
+                zero_inventory_penalty=config.zero_inventory_penalty,
+                optimal_search_state_limit=config.optimal_search_state_limit,
+            )
+        )
+
+    if kb.primal:
+        aspect_rank = _board_aspect_rank(board, kb)
+        ordered_primal = sorted(kb.primal, key=aspect_rank.__getitem__)
+        primal_preference = {
+            aspect: len(ordered_primal) - index
+            for index, aspect in enumerate(ordered_primal)
+        }
+        candidates.append(
+            SearchConfig(
+                max_iterations=config.max_iterations,
+                aspect_inventory={
+                    aspect: primal_preference.get(aspect, 0)
+                    for aspect in kb.aspects
+                },
                 zero_inventory_penalty=config.zero_inventory_penalty,
                 optimal_search_state_limit=config.optimal_search_state_limit,
             )
@@ -255,7 +296,17 @@ def _search_connection_orders(
                 paths=chosen_paths,
                 cost=sum(path.cost for path in chosen_paths),
             )
-            if _minimal_solution_key(kb, candidate.placements) < _minimal_solution_key(kb, best.placements):
+            if _minimal_solution_key(
+                board,
+                kb,
+                candidate.placements,
+                config.aspect_inventory,
+            ) < _minimal_solution_key(
+                board,
+                kb,
+                best.placements,
+                config.aspect_inventory,
+            ):
                 best = candidate
             return
 
@@ -316,14 +367,59 @@ def _search_connection_orders(
 
 
 def _minimal_solution_key(
+    board: BoardState,
     kb: KnowledgeBase,
     placements: Mapping[HexCoord, str],
-) -> tuple[int, int, tuple[tuple[HexCoord, str], ...]]:
-    return (
-        len(placements),
-        sum(kb.aspect_depth(aspect) for aspect in placements.values()),
-        tuple(sorted(placements.items())),
+    inventory: Mapping[str, int] | None,
+) -> _MinimalSolutionRank:
+    shortage_count = 0
+    synthesis_steps = 0
+    primal_spread = 0
+    negative_min_primal = 0
+    inventory_pressure = 0.0
+    if inventory is not None:
+        resource_plan = plan_resource_usage(kb, placements.values(), inventory)
+        shortage_count = sum(resource_plan.shortages.values())
+        synthesis_steps = len(resource_plan.synthesis)
+        remaining_primal = [resource_plan.remaining.get(aspect, 0) for aspect in kb.primal]
+        if remaining_primal:
+            primal_spread = max(remaining_primal) - min(remaining_primal)
+            negative_min_primal = -min(remaining_primal)
+        for aspect, available in resource_plan.available.items():
+            consumed = max(0, available - resource_plan.remaining.get(aspect, 0))
+            if consumed > 0 and available > 0:
+                inventory_pressure += consumed / available
+
+    aspect_rank = _board_aspect_rank(board, kb)
+    return _MinimalSolutionRank(
+        placement_count=len(placements),
+        shortage_count=shortage_count,
+        synthesis_steps=synthesis_steps,
+        primal_spread=primal_spread,
+        negative_min_primal=negative_min_primal,
+        inventory_pressure=round(inventory_pressure, 12),
+        depth_sum=sum(kb.aspect_depth(aspect) for aspect in placements.values()),
+        aspect_signature=tuple(
+            (coord, aspect_rank[aspect])
+            for coord, aspect in sorted(placements.items())
+        ),
     )
+
+
+def _board_aspect_rank(board: BoardState, kb: KnowledgeBase) -> dict[str, int]:
+    seed = sum(
+        (cell.coord.q * 31)
+        + (cell.coord.r * 17)
+        + sum(ord(character) for character in (cell.aspect or ""))
+        for cell in board.roots
+    )
+    primal = list(kb.primal)
+    if primal:
+        offset = seed % len(primal)
+        primal = primal[offset:] + primal[:offset]
+    primal_set = set(primal)
+    ordered = primal + sorted(aspect for aspect in kb.aspects if aspect not in primal_set)
+    return {aspect: index for index, aspect in enumerate(ordered)}
 
 
 def find_connection_path(
