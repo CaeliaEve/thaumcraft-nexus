@@ -425,7 +425,7 @@ class ClientBridgeTests(unittest.TestCase):
             packaged.parent.mkdir(parents=True)
             packaged.write_bytes(b"jar")
 
-            self.assertEqual(client_bridge.agent_jar_path(root), packaged)
+            self.assertEqual(client_bridge.agent_jar_path(root), packaged.resolve())
 
     def test_hidden_subprocess_kwargs_prevent_console_popups_on_windows(self):
         kwargs = client_bridge._hidden_subprocess_kwargs()
@@ -536,7 +536,7 @@ class ClientBridgeTests(unittest.TestCase):
             ):
                 runtime = client_bridge._select_attacher_runtime("456")
 
-        self.assertEqual(runtime.java, str(java))
+            self.assertEqual(Path(runtime.java).resolve(), java.resolve())
         self.assertEqual(runtime.major, 21)
         self.assertEqual(runtime.source, "target-pid:456")
 

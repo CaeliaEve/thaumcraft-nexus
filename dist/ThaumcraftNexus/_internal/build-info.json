@@ -1,6 +1,6 @@
 {
   "version": "0.1.0.dev0",
-  "commit": "7303c0e7ceb29845d2968239465cf3eddb06cb6c",
-  "dirty": false,
+  "commit": "bcd95dbf183045de525d02aff1e1ad79a438b6f0",
+  "dirty": true,
   "python": "3.14.7"
 }

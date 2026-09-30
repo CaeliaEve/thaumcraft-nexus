@@ -14,6 +14,8 @@ class LogbookUiTests(unittest.TestCase):
         self.gui = ThaumNexusGui()
         self.gui.runtime_root = Path(self.tmp.name)
         self.root = tk.Tk()
+        # Hosted Windows desktops can be smaller than the resize cases below.
+        self.root.maxsize(4096, 4096)
         self.callback_errors = []
         self.root.report_callback_exception = lambda *error: self.callback_errors.append(error)
         self.addCleanup(self.close_window)
@@ -34,6 +36,99 @@ class LogbookUiTests(unittest.TestCase):
         except tk.TclError:
             pass  # A shutdown test may already have destroyed the interpreter's window.
         self.assertEqual(self.callback_errors, [], "Tk callbacks must not fail during use or shutdown")
+
+    def test_github_icon_has_tooltip_and_click_target(self):
+        from types import SimpleNamespace
+        view = self.gui.logbook
+        x, y = view.point(350, 624)
+        view._motion(SimpleNamespace(x=x, y=y))
+        self.assertEqual(view._tooltip_text, "项目仓库 · GitHub")
+        clicked = []
+        view.on_github = lambda: clicked.append(True)
+        view._click(SimpleNamespace(x=x, y=y))
+        self.assertEqual(clicked, [True])
+        self.assertIsNotNone(view._github_photo)
+
+    def test_settings_rebinding_conflict_and_escape_leave_live_shortcuts_unchanged(self):
+        from types import SimpleNamespace
+        self.gui._open_settings()
+        editor = self.gui.settings_editor
+        original = dict(self.gui.shortcuts)
+        editor.capture("read")
+        editor.capture_key(SimpleNamespace(keysym="F6", state=0))
+        self.assertEqual(editor.shortcuts, original)
+        editor.capture_key(SimpleNamespace(keysym="F9", state=0))
+        self.assertEqual(editor.shortcuts["read"], "<F9>")
+        self.assertEqual(self.gui.shortcuts, original)
+        editor.capture("apply")
+        editor.escape()
+        self.assertTrue(editor.window.winfo_exists())
+        editor.cancel()
+
+    def test_settings_invalid_custom_timing_does_not_save(self):
+        self.gui._open_settings()
+        editor = self.gui.settings_editor
+        editor.preset.set("custom")
+        editor.speed_changed()
+        editor.delay.set("5001")
+        before = dict(self.gui.placement_speed)
+        editor.save()
+        self.assertEqual(self.gui.placement_speed, before)
+        self.assertFalse(self.gui._settings_path().exists())
+        self.assertTrue(editor.window.winfo_exists())
+        editor.cancel()
+
+    def test_settings_process_refresh_can_finish_after_cancel(self):
+        import threading
+        from unittest.mock import patch
+        entered, release = threading.Event(), threading.Event()
+        def processes():
+            entered.set()
+            release.wait(2)
+            return []
+        self.addCleanup(release.set)
+        self.gui._open_settings()
+        editor = self.gui.settings_editor
+        with patch("thaum_nexus.client_bridge.list_java_processes", side_effect=processes):
+            editor.refresh_processes()
+            self.assertTrue(entered.wait(1))
+            self.root.update()
+            editor.cancel()
+            release.set()
+            self.root.update()
+        self.assertTrue(editor.closed)
+        self.assertIsNone(editor.pending)
+        self.assertEqual(self.gui.target_pid, "")
+
+    def test_settings_edits_are_drafts_until_save(self):
+        import json
+        self.gui._open_settings()
+        editor = self.gui.settings_editor
+        previous = dict(self.gui.shortcuts)
+        editor.shortcuts["read"] = "<F9>"
+        editor.mode.set("optimal")
+        editor.cancel()
+        self.assertEqual(self.gui.shortcuts, previous)
+        self.assertFalse((self.gui.runtime_root / "gui_settings.json").exists())
+        self.gui._open_settings()
+        editor = self.gui.settings_editor
+        editor.shortcuts["read"] = "<F9>"
+        editor.save()
+        self.assertEqual(self.gui.shortcuts["read"], "<F9>")
+        data = json.loads((self.gui.runtime_root / "gui_settings.json").read_text())
+        self.assertEqual(data["shortcuts"]["read"], "<F9>")
+        self.assertEqual(data["targetPid"], "")
+
+    def test_settings_defaults_only_affect_current_page(self):
+        self.gui._open_settings()
+        editor = self.gui.settings_editor
+        editor.shortcuts["read"] = "<F9>"
+        editor.pid.set("123")
+        editor.show_page("世界连接")
+        editor.reset_page()
+        self.assertEqual(editor.pid.get(), "")
+        self.assertEqual(editor.shortcuts["read"], "<F9>")
+        editor.cancel()
 
     def test_close_waits_for_worker_acknowledgement_and_blocks_new_tasks(self):
         import threading
@@ -125,15 +220,17 @@ class LogbookUiTests(unittest.TestCase):
             widget = widgets.pop()
             all_widgets.append(widget)
             widgets.extend(widget.winfo_children())
-        toggle = next(w for w in all_widgets if isinstance(w, ttk.Checkbutton))
+        editor = self.gui.settings_editor
         before = self.gui.solver_mode
-        toggle.invoke()
-        next(w for w in all_widgets if isinstance(w, ttk.Button) and w.cget("text") == "保存并关闭").invoke()
+        editor.mode.set("optimal")
+        editor.shortcuts["read"] = "<F9>"
+        previous_shortcuts = dict(self.gui.shortcuts)
+        editor.save()
         self.root.update()
         self.assertTrue(dialog.winfo_exists())
         self.assertEqual(self.gui.solver_mode, before)
-        labels = [str(w.cget("text")) for w in all_widgets if isinstance(w, ttk.Label)]
-        self.assertTrue(any("保存失败" in value for value in labels))
+        self.assertEqual(self.gui.shortcuts, previous_shortcuts)
+        self.assertIn("保存失败", editor.hint.get())
         self.assertEqual(self.callback_errors, [])
 
     def test_unconfirmed_agent_cancellation_keeps_window_open_for_diagnosis(self):
@@ -234,6 +331,26 @@ class LogbookUiTests(unittest.TestCase):
         self.root.update()
         self.assertEqual(self.calls, ["read"])
 
+    def test_reverse_tab_works_when_tk_lacks_x11_keysym(self):
+        from unittest.mock import patch
+        from tkinter import ttk
+        original_bind = tk.Canvas.bind
+
+        def older_tk_bind(canvas, sequence=None, func=None, add=None):
+            if sequence == "<ISO_Left_Tab>":
+                raise tk.TclError('bad event type or keysym "ISO_Left_Tab"')
+            return original_bind(canvas, sequence, func, add)
+
+        self.gui.canvas.destroy()
+        with patch.object(tk.Canvas, "bind", older_tk_bind):
+            self.gui._build_layout(tk, ttk)
+        self.root.update()
+        self.gui.logbook.focus = "apply"
+        self.gui.canvas.focus_force()
+        self.gui.canvas.event_generate("<Shift-Tab>")
+        self.root.update()
+        self.assertEqual(self.gui.logbook.focus, "read")
+
     def test_configured_enter_shortcuts_override_focused_menu_action(self):
         self.gui.buttons["apply"].command = lambda: self.calls.append("apply")
         self.gui.canvas.focus_force()
@@ -271,6 +388,7 @@ class LogbookUiTests(unittest.TestCase):
     def test_enlarged_menu_target_and_old_position_do_not_overlap(self):
         self.root.geometry("1536x1022+0+0")
         self.root.update()
+        self.assertEqual(self.gui.canvas.winfo_width(), 1536)
         self.click(458, 315)
         self.assertEqual(self.calls, ["read"])
         self.click(120, 210)

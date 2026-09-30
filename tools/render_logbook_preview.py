@@ -29,7 +29,7 @@ def export_canvas(view, output: Path) -> None:
         width, height = 1024, 681
     image = Image.new("RGBA", (width, height), "#090705")
     draw = ImageDraw.Draw(image)
-    photos = {str(photo): photo for photo in (view._background_photo, view._preview_photo) if photo is not None}
+    photos = {str(photo): photo for photo in (view._background_photo, view._preview_photo, view._github_photo) if photo is not None}
     fonts = Path("C:/Windows/Fonts")
     for item in canvas.find_all():
         kind = canvas.type(item)

@@ -38,17 +38,16 @@ PLACEMENT_SPEED_PRESETS = {
     "custom": {"label": "自定义", "delayMs": 80, "verifyDelayMs": 500},
 }
 ACTION_LABELS = {
-    "read": "读取当前笔记",
-    "apply": "读取并自动放置",
-    "wheelchair": "轮椅模式 · 解完背包笔记",
-    "save": "保存答案图",
+    "read": "解析研究笔记",
+    "apply": "推演并注入要素",
+    "wheelchair": "批量研习",
+    "save": "誊录研究图谱",
 }
 ACTION_ORDER = ("read", "apply", "wheelchair", "save")
 
 
 class ThaumNexusGui:
     """Natively rendered Thaumonomicon desktop GUI for structured research note solving."""
-    # UI text markers: 读取当前笔记 / 读取并自动放置 / 轮椅模式 / 停止当前任务
 
     def __init__(self, project_root: Path | str | None = None) -> None:
         self.bridge_project_root = Path(project_root).resolve() if project_root is not None else None
@@ -104,7 +103,9 @@ class ThaumNexusGui:
         from tkinter import ttk
 
         self.tk = tk.Tk()
-        self.tk.title("Thaumcraft Nexus · " + get_version_label(self.resource_root))
+        self.tk.title("Thaumcraft Nexus")
+        from .native_window import theme_window
+        theme_window(self.tk)
         self.tk.geometry("1024x681")
         self.tk.minsize(1024, 681)
 
@@ -274,8 +275,8 @@ class ThaumNexusGui:
                      self._wheelchair_apply_notes, self._save_solution]
         actions = [(key, ACTION_LABELS[key], self._shortcut_display(self.shortcuts[key]), callback)
                    for key, callback in zip(ACTION_ORDER, callbacks)]
-        actions += [("settings", "设置", "", self._open_settings),
-                    ("stop", "停止当前任务", "", self._stop_current_task)]
+        actions += [("settings", "研究配置", "", self._open_settings),
+                    ("stop", "中止推演", "", self._stop_current_task)]
         self.logbook = LogbookView(self.tk, resource_path(BACKGROUND_IMAGE, self.resource_root),
                                    actions, self._show_details, self._open_github, self._show_resources)
         self.canvas = self.logbook.canvas
@@ -314,6 +315,8 @@ class ThaumNexusGui:
         dialog.geometry("620x380")
         dialog.minsize(460, 260)
         dialog.transient(self.tk)
+        from .native_window import theme_window
+        theme_window(dialog)
         text = scrolledtext.ScrolledText(dialog, bg="#211710", fg="#dbc8a8", insertbackground="#dbc8a8",
                                         wrap="word", font=("Microsoft YaHei", 10), padx=18, pady=16)
         text.pack(fill="both", expand=True)
@@ -349,6 +352,8 @@ class ThaumNexusGui:
         dialog.geometry("700x480")
         dialog.minsize(560, 360)
         dialog.transient(self.tk)
+        from .native_window import theme_window
+        theme_window(dialog)
         frame = ttk.Frame(dialog, padding=16)
         frame.pack(fill="both", expand=True)
         ttk.Label(frame, text="\n".join(self.resource_preview.summary)).pack(anchor="w", pady=(0, 12))
@@ -555,270 +560,12 @@ class ThaumNexusGui:
     def _open_settings(self) -> None:
         if self.tk is None:
             return
-        import tkinter as tk
-        from tkinter import ttk
-
-        dialog = tk.Toplevel(self.tk)
-        dialog.title("设置")
-        dialog.configure(bg=self.palette["panel"])
-        dialog.resizable(False, False)
-        dialog.transient(self.tk)
-        dialog.grab_set()
-
-        container = ttk.Frame(dialog, style="Panel.TFrame", padding=18)
-        container.pack(fill="both", expand=True)
-
-        ttk.Label(container, text="快捷键设置", style="SectionTitle.TLabel").grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 12))
-        hint = tk.StringVar(value="点击“重新绑定”，然后按下新的快捷键。")
-        ttk.Label(container, textvariable=hint, style="Muted.TLabel").grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 12))
-
-        value_vars: dict[str, Any] = {}
-        row = 2
-        for action in ACTION_ORDER:
-            ttk.Label(container, text=ACTION_LABELS[action], style="Muted.TLabel").grid(row=row, column=0, sticky="w", pady=5)
-            value_vars[action] = tk.StringVar(value=self._shortcut_display(self.shortcuts[action]))
-            ttk.Label(container, textvariable=value_vars[action], style="Muted.TLabel", width=16).grid(row=row, column=1, sticky="w", padx=(16, 12))
-            ttk.Button(
-                container,
-                text="重新绑定",
-                command=lambda a=action: self._capture_shortcut(dialog, hint, value_vars, a),
-            ).grid(row=row, column=2, sticky="e", pady=5)
-            row += 1
-
-        speed_settings = self._normalize_placement_speed(self.placement_speed)
-        speed_preset_values = [self._speed_preset_display(preset) for preset in PLACEMENT_SPEED_PRESET_ORDER]
-        speed_preset_var = tk.StringVar(value=self._speed_preset_display(str(speed_settings["preset"])))
-        speed_delay_var = tk.StringVar(value=str(speed_settings["delayMs"]))
-        speed_verify_var = tk.StringVar(value=str(speed_settings["verifyDelayMs"]))
-        row += 1
-        ttk.Label(container, text="摆放速度", style="SectionTitle.TLabel").grid(
-            row=row,
-            column=0,
-            columnspan=3,
-            sticky="w",
-            pady=(12, 8),
-        )
-        row += 1
-        ttk.Label(
-            container,
-            text="预设会同时调整每个要素之间的间隔和每张笔记完成后的等待；服务器较慢时请使用稳定预设。",
-            style="Muted.TLabel",
-        ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 8))
-        row += 1
-        ttk.Label(container, text="预设", style="Muted.TLabel").grid(row=row, column=0, sticky="w", pady=5)
-        speed_combo = ttk.Combobox(container, textvariable=speed_preset_var, width=22, state="readonly", values=speed_preset_values)
-        speed_combo.grid(row=row, column=1, sticky="w", padx=(16, 12), pady=5)
-        row += 1
-        ttk.Label(container, text="要素间隔 ms", style="Muted.TLabel").grid(row=row, column=0, sticky="w", pady=5)
-        speed_delay_entry = ttk.Entry(container, textvariable=speed_delay_var, width=18)
-        speed_delay_entry.grid(row=row, column=1, sticky="w", padx=(16, 12), pady=5)
-        row += 1
-        ttk.Label(container, text="完成等待 ms", style="Muted.TLabel").grid(row=row, column=0, sticky="w", pady=5)
-        speed_verify_entry = ttk.Entry(container, textvariable=speed_verify_var, width=18)
-        speed_verify_entry.grid(row=row, column=1, sticky="w", padx=(16, 12), pady=5)
-
-        def apply_speed_preset(_event: Any = None) -> None:
-            preset = self._speed_preset_from_display(speed_preset_var.get())
-            if preset == "custom":
-                return
-            config = PLACEMENT_SPEED_PRESETS[preset]
-            speed_delay_var.set(str(config["delayMs"]))
-            speed_verify_var.set(str(config["verifyDelayMs"]))
-            hint.set(f"已选择摆放速度：{config['label']}。")
-
-        def mark_custom_speed(_event: Any = None) -> None:
-            speed_preset_var.set(self._speed_preset_display("custom"))
-
-        speed_combo.bind("<<ComboboxSelected>>", apply_speed_preset)
-        speed_delay_entry.bind("<KeyRelease>", mark_custom_speed)
-        speed_verify_entry.bind("<KeyRelease>", mark_custom_speed)
-
-        optimal_mode_var = tk.BooleanVar(value=self.solver_mode == SOLVER_MODE_OPTIMAL)
-        row += 1
-        ttk.Label(container, text="求解策略", style="SectionTitle.TLabel").grid(
-            row=row,
-            column=0,
-            columnspan=3,
-            sticky="w",
-            pady=(12, 8),
-        )
-        row += 1
-        ttk.Checkbutton(
-            container,
-            text="最少要素优先",
-            variable=optimal_mode_var,
-        ).grid(row=row, column=0, columnspan=3, sticky="w", pady=5)
-        row += 1
-        ttk.Label(
-            container,
-            text="关闭时优先使用充足库存；开启后在搜索预算内优先减少放置，格数相同时均衡库存并减少合成，不保证全局最优。",
-            style="Muted.TLabel",
-        ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 8))
-
-        target_pid_var = tk.StringVar(value=self.target_pid)
-        process_var = tk.StringVar()
-        row += 1
-        ttk.Label(container, text="目标 JVM 进程（仅本次运行）", style="SectionTitle.TLabel").grid(
-            row=row,
-            column=0,
-            columnspan=3,
-            sticky="w",
-            pady=(12, 8),
-        )
-        row += 1
-        ttk.Label(
-            container,
-            text="留空为自动检测；PID 会在游戏重启后变化，手动选择仅对本次运行生效。",
-            style="Muted.TLabel",
-        ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 8))
-        row += 1
-        ttk.Label(container, text="PID", style="Muted.TLabel").grid(row=row, column=0, sticky="w", pady=5)
-        ttk.Entry(container, textvariable=target_pid_var, width=18).grid(row=row, column=1, sticky="w", padx=(16, 12), pady=5)
-        ttk.Button(container, text="清空", command=lambda: target_pid_var.set("")).grid(row=row, column=2, sticky="e", pady=5)
-        row += 1
-        process_combo = ttk.Combobox(container, textvariable=process_var, width=58, state="readonly")
-        process_combo.grid(row=row, column=0, columnspan=2, sticky="we", pady=5)
-
-        def apply_selected_process() -> None:
-            selected = process_var.get().strip()
-            if not selected:
-                return
-            target_pid_var.set(selected.split(maxsplit=1)[0])
-
-        def refresh_processes() -> None:
-            from .client_bridge import list_java_processes
-
-            processes = list_java_processes()
-            values = [process.label for process in processes]
-            process_combo.configure(values=values)
-            if values:
-                process_var.set(values[0])
-                hint.set(f"已找到 {len(values)} 个 JVM，选中后点击“使用选中”。")
-            else:
-                process_var.set("")
-                hint.set("没有找到可见 JVM；请确认游戏已启动，或手动输入 PID。")
-
-        ttk.Button(container, text="刷新 JVM", command=refresh_processes).grid(row=row, column=2, sticky="e", pady=5)
-        row += 1
-        ttk.Button(container, text="使用选中", command=apply_selected_process).grid(row=row, column=2, sticky="e", pady=5)
-        process_combo.bind("<<ComboboxSelected>>", lambda _event: apply_selected_process())
-        row += 1
-
-        def parse_speed_settings() -> dict[str, int | str] | None:
-            preset = self._speed_preset_from_display(speed_preset_var.get())
-            if preset != "custom":
-                config = PLACEMENT_SPEED_PRESETS[preset]
-                return {
-                    "preset": preset,
-                    "delayMs": int(config["delayMs"]),
-                    "verifyDelayMs": int(config["verifyDelayMs"]),
-                }
-            try:
-                delay_ms = int(speed_delay_var.get().strip())
-                verify_delay_ms = int(speed_verify_var.get().strip())
-            except ValueError:
-                hint.set("摆放速度只能填写数字；单位为毫秒。")
-                return None
-            if delay_ms < 0 or verify_delay_ms < 0 or delay_ms > 5000 or verify_delay_ms > 5000:
-                hint.set("摆放速度范围为 0 到 5000 毫秒。")
-                return None
-            return {"preset": "custom", "delayMs": delay_ms, "verifyDelayMs": verify_delay_ms}
-
-        def save_settings() -> bool:
-            speed = parse_speed_settings()
-            if speed is None:
-                return False
-            target = target_pid_var.get().strip()
-            if target and not target.isdigit():
-                hint.set("PID 只能是数字；留空表示自动检测。")
-                return False
-            previous = (self.target_pid, self.placement_speed, self.solver_mode)
-            self.target_pid = target
-            self.placement_speed = speed
-            self.solver_mode = (
-                SOLVER_MODE_OPTIMAL
-                if optimal_mode_var.get()
-                else DEFAULT_SOLVER_MODE
-            )
-            try:
-                self._save_settings()
-            except OSError as exc:
-                self.target_pid, self.placement_speed, self.solver_mode = previous
-                hint.set("保存失败：请检查程序目录的写入权限或磁盘空间。原设置保持不变。")
-                self._append_log(f"设置保存失败：{exc}")
-                return False
-            hint.set(
-                f"已保存：{self._solver_mode_summary()}；摆放速度：{self._placement_speed_summary()}；目标 JVM：{self.target_pid}"
-                if self.target_pid
-                else f"已保存：{self._solver_mode_summary()}；摆放速度：{self._placement_speed_summary()}；目标 JVM 使用自动检测。"
-            )
-            self._append_log(
-                f"求解策略：{self._solver_mode_summary()}；摆放速度：{self._placement_speed_summary()}；目标 JVM PID：{self.target_pid}"
-                if self.target_pid
-                else f"求解策略：{self._solver_mode_summary()}；摆放速度：{self._placement_speed_summary()}；目标 JVM PID：自动检测"
-            )
-            return True
-
-        def save_and_close() -> None:
-            if save_settings():
-                dialog.destroy()
-
-        buttons = ttk.Frame(container, style="Panel.TFrame")
-        buttons.grid(row=row, column=0, columnspan=3, sticky="e", pady=(14, 0))
-        ttk.Button(buttons, text="恢复默认", command=lambda: self._reset_shortcuts(value_vars, hint)).pack(side="left", padx=(0, 8))
-        ttk.Button(buttons, text="保存并关闭", command=save_and_close).pack(side="left", padx=(0, 8))
-        ttk.Button(buttons, text="关闭", command=dialog.destroy).pack(side="left")
-
-        dialog.bind("<Escape>", lambda _event: dialog.destroy())
-        dialog.focus_set()
-
-    def _capture_shortcut(self, dialog: Any, hint: Any, value_vars: dict[str, Any], action: str) -> None:
-        hint.set(f"请按下“{ACTION_LABELS[action]}”的新快捷键……")
-
-        def on_key(event: Any) -> str:
-            sequence = self._event_to_shortcut(event)
-            if sequence is None:
-                return "break"
-            conflict = next((name for name, value in self.shortcuts.items() if value == sequence and name != action), None)
-            if conflict is not None:
-                hint.set(f"{self._shortcut_display(sequence)} 已用于“{ACTION_LABELS[conflict]}”。")
-                dialog.unbind("<KeyPress>")
-                return "break"
-            previous = self.shortcuts[action]
-            self.shortcuts[action] = sequence
-            try:
-                self._save_shortcuts()
-            except OSError as exc:
-                self.shortcuts[action] = previous
-                hint.set("快捷键保存失败：请检查目录写入权限或磁盘空间。")
-                self._append_log(f"快捷键保存失败：{exc}")
-                dialog.unbind("<KeyPress>")
-                return "break"
-            self._bind_shortcuts()
-            self._refresh_shortcut_labels()
-            value_vars[action].set(self._shortcut_display(sequence))
-            hint.set(f"已设置：{ACTION_LABELS[action]} → {self._shortcut_display(sequence)}")
-            dialog.unbind("<KeyPress>")
-            return "break"
-
-        dialog.bind("<KeyPress>", on_key)
-        dialog.focus_force()
-
-    def _reset_shortcuts(self, value_vars: dict[str, Any], hint: Any) -> None:
-        previous = self.shortcuts
-        self.shortcuts = dict(DEFAULT_SHORTCUTS)
-        try:
-            self._save_shortcuts()
-        except OSError as exc:
-            self.shortcuts = previous
-            hint.set("恢复默认失败：请检查目录写入权限或磁盘空间。")
-            self._append_log(f"设置保存失败：{exc}")
+        from .settings_dialog import SettingsDialog
+        editor = getattr(self, "settings_editor", None)
+        if editor is not None and not editor.closed:
+            editor.window.lift()
             return
-        self._bind_shortcuts()
-        self._refresh_shortcut_labels()
-        for action in ACTION_ORDER:
-            value_vars[action].set(self._shortcut_display(self.shortcuts[action]))
-        hint.set("已恢复默认快捷键。")
+        self.settings_editor = SettingsDialog(self)
 
     def _read_current_note(self) -> None:
         if self.busy:
@@ -1141,13 +888,13 @@ class ThaumNexusGui:
         from tkinter import filedialog
 
         if self.rendered is None:
-            self._set_status("还没有答案图。请先读取当前笔记。")
+            self._set_status("还没有答案图。请先解析研究笔记。")
             return
         default = "current_solution.png"
         if self.solution_image_path is not None:
             default = self.solution_image_path.name
         path = filedialog.asksaveasfilename(
-            title="保存答案图",
+            title="誊录研究图谱",
             initialfile=default,
             defaultextension=".png",
             filetypes=[("PNG", "*.png"), ("All files", "*.*")],

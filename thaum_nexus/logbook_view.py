@@ -52,6 +52,10 @@ class LogbookView:
         self.canvas.pack(fill="both", expand=True)
         with Image.open(background) as image:
             self.background = image.convert("RGB")
+        with Image.open(background.parent / "icons8-github-50.png") as icon:
+            self.github_icon = icon.convert("RGBA")
+        self._github_photo = None
+        self._github_key = None
         self.actions = {key: MenuAction(self, key, label, shortcut, command, 210 + i * 40)
                         for i, (key, label, shortcut, command) in enumerate(actions)}
         self.on_details, self.on_github = on_details, on_github
@@ -85,7 +89,11 @@ class LogbookView:
         self.canvas.bind("<Leave>", self._leave)
         self.canvas.bind("<Button-1>", self._click)
         self.canvas.bind("<Tab>", lambda e: self._move_focus(-1 if e.state & 1 else 1))
-        self.canvas.bind("<ISO_Left_Tab>", lambda _e: self._move_focus(-1))
+        self.canvas.bind("<Shift-Tab>", lambda _e: self._move_focus(-1))
+        try:
+            self.canvas.bind("<ISO_Left_Tab>", lambda _e: self._move_focus(-1))
+        except tk.TclError:
+            pass  # Older Windows Tk does not define the X11 reverse-tab keysym.
         self.canvas.bind("<Up>", lambda _e: self._move_focus(-1))
         self.canvas.bind("<Down>", lambda _e: self._move_focus(1))
         self.canvas.bind("<Return>", self._activate_focus)
@@ -160,9 +168,18 @@ class LogbookView:
             self._text(111, y, label, size=13)
             self._text(154, y, self._fit(value, 165, 13), size=13)
         self._text(111, 592, self._fit(self.status, 225, 12), size=12, color=RED)
-        self._text(257, 624, "查看详情", size=12, color=GOLD if "details" in {self.hover, self.focus} else RED)
-        self._text(366, 624, "GitHub", size=12, anchor="e", family="Georgia",
-                   color=GOLD if "github" in {self.hover, self.focus} else RED)
+        self._text(257, 624, "研究记录", size=12, color=GOLD if "details" in {self.hover, self.focus} else RED)
+        icon_color = GOLD if "github" in {self.hover, self.focus} else INK
+        icon_size = max(1, round(24 * self.scale))
+        icon_key = (icon_size, icon_color)
+        if icon_key != self._github_key:
+            icon = Image.new("RGBA", self.github_icon.size, icon_color)
+            icon.putalpha(self.github_icon.getchannel("A"))
+            self._github_photo = ImageTk.PhotoImage(icon.resize((icon_size, icon_size), Image.Resampling.LANCZOS), master=self.canvas)
+            self._github_key = icon_key
+        self.canvas.create_image(*self.point(352, 624), image=self._github_photo)
+        if self.focus == "github":
+            self._line(334, 641, 370, 641, fill=GOLD)
 
         if self.preview is not None and self.state == "success":
             box_w, box_h = 410 * self.scale, 385 * self.scale
@@ -228,7 +245,16 @@ class LogbookView:
             self.draw()
         x = (event.x - self.offset_x) / self.scale
         y = (event.y - self.offset_y) / self.scale
-        tooltip, position = "", (109, 537)
+        tips = {
+            "github": "项目仓库 · GitHub",
+            "read": "读取研究台上的笔记并推演连线，不消耗要素。",
+            "apply": "解析当前笔记并自动放置，消耗游戏内的要素库存。",
+            "wheelchair": "依次研习背包中的未解笔记，持续消耗要素库存。",
+            "save": "将当前研究图谱保存为图片。",
+            "settings": "调整研究策略、注入节律、快捷符令与世界连接。",
+            "stop": "请求停止当前操作，等待正在执行的步骤安全结束。",
+        }
+        tooltip, position = tips.get(hit, ""), (109, 575)
         if 105 < x < 340 and 510 < y < 530 and self._fit(self.note, 165, 13) != self.note:
             tooltip = self.note
         elif self.state == "success" and self.preview is not None:

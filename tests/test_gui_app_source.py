@@ -21,8 +21,8 @@ class GuiAppSourceTests(unittest.TestCase):
     def test_gui_focuses_on_structured_note_workflow(self):
         source = GUI_SOURCE.read_text(encoding="utf-8")
 
-        self.assertIn("读取当前笔记", source)
-        self.assertIn("读取并自动放置", source)
+        self.assertIn("解析研究笔记", source)
+        self.assertIn("推演并注入要素", source)
         for obsolete_label in OBSOLETE_SCREENSHOT_UI_TEXT:
             self.assertNotIn(obsolete_label, source)
 
@@ -47,7 +47,7 @@ class GuiAppSourceTests(unittest.TestCase):
 
         self.assertIn("targetPid", source)
         self.assertIn("_bridge_pid", source)
-        self.assertIn("list_java_processes", source)
+        self.assertIn("list_java_processes", (GUI_SOURCE.parent / "settings_dialog.py").read_text(encoding="utf-8"))
         self.assertIn("pid=pid", source)
         self.assertIn("stale PID", source)
         self.assertIn("targetPid\": """, source)
@@ -74,7 +74,7 @@ class GuiAppSourceTests(unittest.TestCase):
         self.assertIn("自定义", source)
         self.assertIn("_placement_speed_values", source)
         self.assertIn("_placement_speed_summary", source)
-        self.assertIn("0 到 5000 毫秒", source)
+        self.assertIn("0 到 5000 毫秒", (GUI_SOURCE.parent / "settings_dialog.py").read_text(encoding="utf-8"))
 
     def test_gui_exposes_optimal_solver_mode(self):
         source = GUI_SOURCE.read_text(encoding="utf-8")
