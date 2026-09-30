@@ -5,6 +5,8 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 build/
+# Local implementation plans stay on this machine.
+/docs/superpowers/plans/
 # Keep the published Windows package alongside source on main.
 dist/*
 !dist/ThaumcraftNexus/
