@@ -2,7 +2,9 @@
     [switch]$SkipPyInstallerInstall,
     [switch]$SkipJavaAgentBuild,
     [string]$BundledJdkPath,
-    [string]$OutputDir
+    [string]$OutputDir,
+    [string]$PythonExe,
+    [string]$Version
 )
 
 $ErrorActionPreference = "Stop"
@@ -13,8 +15,12 @@ $AppDist = Join-Path $DistRoot "ThaumcraftNexus"
 $PyInstallerBuild = Join-Path $ProjectRoot "build\pyinstaller"
 $SpecPath = Join-Path $PyInstallerBuild "spec"
 $WorkPath = Join-Path $PyInstallerBuild "work"
+. (Join-Path $PSScriptRoot "build_helpers.ps1")
 
 function Resolve-PythonCommand {
+    if ($PythonExe) {
+        return @{ Exe = (Resolve-Path -LiteralPath $PythonExe).Path; Args = @() }
+    }
     $python = Get-Command python -ErrorAction SilentlyContinue
     if ($python) {
         return @{ Exe = $python.Source; Args = @() }
@@ -45,7 +51,7 @@ function Get-PythonRuntimeDir {
         [hashtable]$Python
     )
 
-    $runtimeDir = & $Python.Exe @($Python.Args + @("-c", "import pathlib, sys; print(pathlib.Path(sys.executable).resolve().parent)"))
+    $runtimeDir = & $Python.Exe @($Python.Args + @("-c", "import pathlib, sys; print(pathlib.Path(sys.base_prefix).resolve())"))
     if ($LASTEXITCODE -ne 0 -or -not $runtimeDir) {
         throw "Failed to resolve Python runtime directory."
     }
@@ -139,35 +145,52 @@ function Copy-NormalizedUtf8Text {
 
 Push-Location $ProjectRoot
 try {
-    $Python = Resolve-PythonCommand
-    $PythonRuntimeDir = Get-PythonRuntimeDir $Python
+    $BasePython = Resolve-PythonCommand
+    $RequiredPython = (Get-Content -LiteralPath (Join-Path $ProjectRoot ".python-version") -Raw).Trim()
+    Invoke-Python $BasePython @("-c", "import sys; assert '.'.join(map(str, sys.version_info[:3])) == '$RequiredPython', 'Release builds require Python $RequiredPython'; assert sys.maxsize > 2**32, 'Release builds require 64-bit Python'")
+    # Resolve before creating the venv: vcruntime140_1.dll lives with base Python.
+    $PythonRuntimeDir = Get-PythonRuntimeDir $BasePython
     $ResolvedBundledJdk = Resolve-BundledJdk $BundledJdkPath
-
-    Invoke-Python $Python @("-m", "pip", "install", "-r", "requirements.txt")
-
+    $BuildRoot = [System.IO.Path]::GetFullPath((Join-Path $ProjectRoot "build"))
+    $ReleaseVenv = [System.IO.Path]::GetFullPath((Join-Path $BuildRoot "release-venv"))
+    $Python = @{ Exe = (Join-Path $ReleaseVenv "Scripts\python.exe"); Args = @() }
     if (-not $SkipPyInstallerInstall) {
-        & $Python.Exe @($Python.Args + @("-m", "PyInstaller", "--version")) | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            Invoke-Python $Python @("-m", "pip", "install", "pyinstaller")
+        if ((Test-Path -LiteralPath $BuildRoot) -and ((Get-Item -LiteralPath $BuildRoot).Attributes -band [System.IO.FileAttributes]::ReparsePoint)) {
+            throw "Refusing to recreate environment inside linked build directory: $BuildRoot"
         }
+        if (-not $ReleaseVenv.StartsWith($BuildRoot + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to recreate environment outside build directory: $ReleaseVenv"
+        }
+        if (Test-Path -LiteralPath $ReleaseVenv) {
+            if ((Get-Item -LiteralPath $ReleaseVenv).Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+                throw "Refusing to remove linked build environment: $ReleaseVenv"
+            }
+            Remove-Item -LiteralPath $ReleaseVenv -Recurse -Force
+        }
+        Invoke-Python $BasePython @("-m", "venv", $ReleaseVenv)
+        Invoke-Python $Python @("-m", "pip", "install", "--disable-pip-version-check", "--only-binary=:all:", "-r", "requirements-build.txt")
+    } elseif (-not (Test-Path -LiteralPath $Python.Exe)) {
+        throw "-SkipPyInstallerInstall requires an existing build/release-venv. Run once without this flag."
     }
+    Invoke-Python $Python @("-c", "import sys; assert '.'.join(map(str, sys.version_info[:3])) == '$RequiredPython'")
+    Invoke-Python $Python @("tools/release_tools.py", "check-environment", "requirements-build.txt")
 
     $AgentJar = Join-Path $ProjectRoot "java-agent\build\thaum-nexus-agent.jar"
     if (-not $SkipJavaAgentBuild) {
-        try {
-            powershell -NoProfile -ExecutionPolicy Bypass -File ".\java-agent\build_agent.ps1"
-        } catch {
-            if (-not (Test-Path $AgentJar)) {
-                throw
-            }
-            Write-Warning "Java Agent build failed, using existing jar: $AgentJar"
-        }
+        # Every build gets a fresh Java output directory, so a locked old jar cannot be selected.
+        $JavaOutput = Join-Path $PyInstallerBuild ("java-agent-" + [guid]::NewGuid().ToString("N"))
+        Invoke-JavaAgentBuild (Join-Path $ProjectRoot "java-agent\build_agent.ps1") $JavaOutput
+        $AgentJar = Join-Path $JavaOutput "thaum-nexus-agent.jar"
     }
     if (-not (Test-Path $AgentJar)) {
         throw "Java Agent jar was not found: $AgentJar"
     }
 
     New-Item -ItemType Directory -Force -Path $SpecPath, $WorkPath | Out-Null
+    $MetadataPath = Join-Path $PyInstallerBuild "build-info.json"
+    $MetadataArgs = @("tools/release_tools.py", "metadata", "--output", $MetadataPath)
+    if ($Version) { $MetadataArgs += @("--version", $Version) }
+    Invoke-Python $Python $MetadataArgs
 
     $DataDir = Join-Path $ProjectRoot "data"
     $ImageDir = Join-Path $ProjectRoot "image"
@@ -176,7 +199,8 @@ try {
     $AddData = @(
         "$DataDir;data",
         "$ImageDir;image",
-        "$AgentJar;java-agent"
+        "$AgentJar;java-agent",
+        "$MetadataPath;."
     )
     $AddBinary = @()
 
@@ -190,6 +214,9 @@ try {
         "--noconfirm",
         "--clean",
         "--windowed",
+        "--exclude-module", "numpy",
+        "--exclude-module", "cv2",
+        "--exclude-module", "matplotlib",
         "--name", "ThaumcraftNexus",
         "--specpath", $SpecPath,
         "--distpath", $DistRoot,
@@ -243,6 +270,8 @@ License:
     $PortableReadmeLf = ($PortableReadme -replace "`r`n", "`n") + "`n"
     $Utf8Bom = New-Object System.Text.UTF8Encoding($true)
     [System.IO.File]::WriteAllText($PortableReadmePath, $PortableReadmeLf, $Utf8Bom)
+
+    Invoke-Python $Python @("tools/release_tools.py", "verify", $AppDist)
 
     Write-Output ""
     Write-Output "Portable build complete:"

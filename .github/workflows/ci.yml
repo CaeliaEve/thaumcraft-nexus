@@ -1,0 +1,58 @@
+name: Windows validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python: '3.10'
+            java: '8'
+          - python: '3.14.7'
+            java: '21'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+      - name: Install runtime dependencies
+        run: python -m pip install Pillow==12.3.0
+      - name: Run Python tests
+        run: python -m unittest discover -s tests -v
+      - name: Compile Java agent
+        shell: powershell
+        run: ./java-agent/build_agent.ps1
+
+  portable:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+          architecture: x64
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+      - name: Build isolated portable package
+        shell: powershell
+        run: ./scripts/build_portable.ps1 -OutputDir build/ci-dist
+      - name: Smoke test frozen resources
+        shell: powershell
+        run: ./scripts/smoke_portable.ps1 -AppDir build/ci-dist/ThaumcraftNexus

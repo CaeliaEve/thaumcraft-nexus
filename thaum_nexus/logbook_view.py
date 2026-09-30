@@ -45,7 +45,8 @@ class MenuAction:
 class LogbookView:
     def __init__(self, parent: tk.Misc, background: Path,
                  actions: list[tuple[str, str, str, Callable[[], None]]],
-                 on_details: Callable[[], None], on_github: Callable[[], None]):
+                 on_details: Callable[[], None], on_github: Callable[[], None],
+                 on_resources: Callable[[], None] | None = None):
         self.canvas = tk.Canvas(parent, width=WIDTH, height=HEIGHT, bg="#090705",
                                 highlightthickness=0, takefocus=True)
         self.canvas.pack(fill="both", expand=True)
@@ -54,6 +55,12 @@ class LogbookView:
         self.actions = {key: MenuAction(self, key, label, shortcut, command, 210 + i * 40)
                         for i, (key, label, shortcut, command) in enumerate(actions)}
         self.on_details, self.on_github = on_details, on_github
+        self.on_resources = on_resources
+        self.resource_summary: tuple[str, ...] = ()
+        self.preview_regions: list[tuple[float, float, float, str]] = []
+        self.preview_transform = (0.0, 0.0, 1.0)
+        self._tooltip_text = ""
+        self._tooltip_position = (109, 537)
         self.hover: str | None = None
         self.focus: str | None = None
         self.note = "—"
@@ -158,15 +165,23 @@ class LogbookView:
                    color=GOLD if "github" in {self.hover, self.focus} else RED)
 
         if self.preview is not None and self.state == "success":
-            box_w, box_h = 410 * self.scale, 445 * self.scale
+            box_w, box_h = 410 * self.scale, 385 * self.scale
             factor = min(box_w / self.preview.width, box_h / self.preview.height)
             preview_size = (max(1, round(self.preview.width * factor)), max(1, round(self.preview.height * factor)))
             key = (id(self.preview), preview_size)
             if key != self._preview_key:
                 self._preview_photo = ImageTk.PhotoImage(self.preview.resize(preview_size, Image.Resampling.LANCZOS), master=self.canvas)
                 self._preview_key = key
-            self.canvas.create_image(*self.point(717, 331), image=self._preview_photo)
-            self._text(717, 574, self._fit(self.note, 342, 13), size=13, anchor="center", color=RED)
+            center_x, center_y = self.point(717, 310)
+            self.preview_transform = (center_x - preview_size[0] / 2, center_y - preview_size[1] / 2,
+                                      preview_size[0] / self.preview.width)
+            self.canvas.create_image(center_x, center_y, image=self._preview_photo)
+            self._text(717, 524, self._fit(self.note, 342, 13), size=13, anchor="center", color=RED)
+            for index, line in enumerate(self.resource_summary[:2]):
+                self._text(717, 548 + index * 21, self._fit(line, 364, 13), size=13, anchor="center")
+            if self.on_resources is not None:
+                self._text(717, 592, "资源明细与合成顺序", size=13, anchor="center",
+                           color=GOLD if "resources" in {self.hover, self.focus} else RED)
         else:
             headings = {"idle": "等 待 读 取 研 究 笔 记", "busy": "正 在 推 演",
                         "error": "本 次 推 演 失 败", "cancelled": "任 务 已 停 止",
@@ -185,6 +200,7 @@ class LogbookView:
         self.draw()
 
     def set_page(self, state: str, message: str = "", preview: Image.Image | None = None) -> None:
+        self._hide_tooltip()
         self.state, self.message = state, message
         if preview is not None:
             self.preview = preview
@@ -200,6 +216,8 @@ class LogbookView:
             return "details"
         if 327 <= x <= 381 and 610 <= y <= 638:
             return "github"
+        if self.state == "success" and self.preview is not None and self.on_resources is not None and 610 <= x <= 830 and 580 <= y <= 604:
+            return "resources"
         return None
 
     def _motion(self, event) -> None:
@@ -210,14 +228,32 @@ class LogbookView:
             self.draw()
         x = (event.x - self.offset_x) / self.scale
         y = (event.y - self.offset_y) / self.scale
+        tooltip, position = "", (109, 537)
         if 105 < x < 340 and 510 < y < 530 and self._fit(self.note, 165, 13) != self.note:
+            tooltip = self.note
+        elif self.state == "success" and self.preview is not None:
+            left, top, factor = self.preview_transform
+            px, py = (event.x - left) / factor, (event.y - top) / factor
+            for cx, cy, radius, label in self.preview_regions:
+                if (px - cx) ** 2 + (py - cy) ** 2 <= radius ** 2:
+                    tooltip = label
+                    position = (max(510, min(x + 12, 650)), max(115, min(y + 20, 490)))
+                    break
+        if tooltip != self._tooltip_text:
+            self._hide_tooltip()
+            self._tooltip_text = tooltip
+            self._tooltip_position = position
+        if tooltip:
             if self._tooltip_job is None:
                 self._tooltip_job = self.canvas.after(500, self._show_tooltip)
         else:
             self._hide_tooltip()
 
     def _show_tooltip(self) -> None:
-        item = self._text(109, 537, self.note, size=13, width=277, anchor="nw", tags="tooltip")
+        if not self._tooltip_text:
+            return
+        self.canvas.delete("tooltip")
+        item = self._text(*self._tooltip_position, self._tooltip_text, size=13, width=277, anchor="nw", tags="tooltip")
         box = self.canvas.bbox(item)
         if box:
             rect = self.canvas.create_rectangle(box[0] - 7, box[1] - 5, box[2] + 7, box[3] + 5,
@@ -225,6 +261,7 @@ class LogbookView:
             self.canvas.tag_raise(item, rect)
 
     def _hide_tooltip(self) -> None:
+        self._tooltip_text = ""
         if self._tooltip_job is not None:
             self.canvas.after_cancel(self._tooltip_job)
             self._tooltip_job = None
@@ -250,10 +287,14 @@ class LogbookView:
             self.on_details()
         elif key == "github":
             self.on_github()
+        elif key == "resources" and self.on_resources is not None:
+            self.on_resources()
         self.draw()
 
     def _move_focus(self, step: int) -> str:
         keys = [a.key for a in self.actions.values() if a.state == "normal"] + ["details", "github"]
+        if self.state == "success" and self.preview is not None and self.on_resources is not None:
+            keys.append("resources")
         index = keys.index(self.focus) if self.focus in keys else (-1 if step > 0 else 0)
         self.focus = keys[(index + step) % len(keys)]
         self.draw()

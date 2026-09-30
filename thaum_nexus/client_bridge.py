@@ -9,7 +9,7 @@ import subprocess
 import threading
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable
 
@@ -18,7 +18,7 @@ from .knowledge_base import KnowledgeBase
 from .note_io import ResearchNote
 from .paths import app_root, is_frozen, resource_root, runtime_root
 from .resources import ResourcePlan, plan_resource_usage
-from .solver import SearchConfig, solve
+from .solver import SearchConfig, SolverCancelled, solve
 
 
 JAVA_HELPER_MEMORY_FLAGS = ["-Xms16m", "-Xmx128m"]
@@ -190,7 +190,11 @@ def read_and_solve_current_note(
     available_aspects = available_aspects_from_note_payload(payload)
     solve_mode = normalize_solver_mode(solve_mode)
     config = _search_config_for_mode(solve_mode, available_aspects)
-    solution = solve(note.board, kb, config)
+    config = replace(config or SearchConfig(), cancel_check=lambda: _is_cancelled(stop_event))
+    try:
+        solution = solve(note.board, kb, config)
+    except SolverCancelled as exc:
+        raise OperationCancelled(str(exc)) from exc
     resource_plan = (
         plan_resource_usage(kb, solution.placements.values(), available_aspects)
         if available_aspects is not None

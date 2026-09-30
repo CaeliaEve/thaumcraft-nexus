@@ -36,28 +36,10 @@ class BoardImageRenderer:
         if not coords:
             return Image.new("RGBA", (640, 360), background)
 
-        raw_positions = {coord: self._axial_to_raw(coord) for coord in coords}
-        min_x = min(x for x, _y in raw_positions.values())
-        max_x = max(x for x, _y in raw_positions.values())
-        min_y = min(y for _x, y in raw_positions.values())
-        max_y = max(y for _x, y in raw_positions.values())
-
-        margin = 18 if paper else self.margin
-        width = int(round(max_x - min_x + margin * 2 + self.hex_size * 2))
-        height = int(round(max_y - min_y + margin * 2 + self.hex_size * 2))
-        if not paper:
-            width, height = max(520, width), max(340, height)
+        width, height, positions = self._layout(coords, paper=paper)
         image = Image.new("RGBA", (width, height), background)
         draw = ImageDraw.Draw(image, "RGBA")
         font = ImageFont.load_default()
-
-        positions = {
-            coord: (
-                x - min_x + (width - (max_x - min_x)) / 2,
-                y - min_y + (height - (max_y - min_y)) / 2,
-            )
-            for coord, (x, y) in raw_positions.items()
-        }
 
         for coord in sorted(board.cells):
             cell = board.cells[coord]
@@ -127,6 +109,37 @@ class BoardImageRenderer:
         if not paper:
             draw.text((18, 16), title, fill=(124, 124, 124, 255), font=font)
         return image
+
+    def _layout(self, coords, *, paper: bool):
+        raw = {coord: self._axial_to_raw(coord) for coord in coords}
+        min_x, max_x = min(x for x, _ in raw.values()), max(x for x, _ in raw.values())
+        min_y, max_y = min(y for _, y in raw.values()), max(y for _, y in raw.values())
+        margin = 18 if paper else self.margin
+        width = round(max_x - min_x + margin * 2 + self.hex_size * 2)
+        height = round(max_y - min_y + margin * 2 + self.hex_size * 2)
+        if not paper:
+            width, height = max(520, width), max(340, height)
+        positions = {coord: (x - min_x + (width - max_x + min_x) / 2,
+                             y - min_y + (height - max_y + min_y) / 2) for coord, (x, y) in raw.items()}
+        return width, height, positions
+
+    def describe_cells(self, board: BoardState, solution: Solution):
+        """Tooltip circles share exactly the paper render's pixel coordinates."""
+        coords = set(board.cells) | set(solution.placements)
+        if not coords:
+            return []
+        _, _, positions = self._layout(coords, paper=True)
+        order = {coord: index for index, coord in enumerate(sorted(solution.placements), 1)}
+        regions = []
+        for coord, cell in sorted(board.cells.items()):
+            aspect = solution.placements.get(coord, cell.aspect)
+            if not aspect:
+                continue
+            name = self.kb.require_aspect(aspect).name
+            label = f"放置 #{order[coord]}" if coord in order else ("固定要素" if cell.kind is CellKind.ROOT else "已放置")
+            x, y = positions[coord]
+            regions.append((x, y, self.hex_size * sqrt(3) / 2, f"{name} ({aspect}) · {label}"))
+        return regions
 
     def save(self, board: BoardState, solution: Solution | None, output: Path) -> None:
         output.parent.mkdir(parents=True, exist_ok=True)

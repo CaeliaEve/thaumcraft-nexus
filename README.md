@@ -115,6 +115,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\java-agent\build_agent.ps1
 
 主页采用魔导手册双页布局：左页提供操作目录与实时状态，右页显示透明棋盘预览。窗口缩放时书页、文字和点击区域等比例调整；支持 Tab / Shift+Tab、方向键导航及 Enter / Space 激活。左下角“查看详情”可查看持续更新的任务记录，长笔记名可悬停查看全文。
 
+右页提供资源预估与“资源明细与合成顺序”入口，可查看放置需求、读取时库存、预计合成次数和阻塞缺口；悬停棋盘要素可查看名称与放置编号。库存是读取时的快照，自动放置后会将执行前计划与实际回执区分显示。缺口为当前合成路径识别到的阻塞资源，补充后应重新读取。
+
+停止请求会传递到求解过程。关闭主窗口时，程序先请求停止并等待后台任务结束；若游戏内操作未确认停止，会保留错误提示，要求检查或重启目标客户端后再继续。
+
+错误页面提供原因分类和处理建议，完整技术详情保存在任务记录及 `runtime/gui_last_error.*` 中。设置使用原子替换保存；保存失败保留原设置，格式损坏时回退默认值并提示，读取过程不会覆盖损坏文件。窗口标题与诊断记录包含版本信息，便携包还记录构建所用的源码提交号。
+
 ## Java / JVM 要求
 
 Thaumcraft Nexus 会自动识别 GTNH / Minecraft JVM，并兼容常见启动器入口，包括 Prism Launcher / MultiMC 系列入口。
@@ -175,7 +181,7 @@ python -m thaum_nexus.cli wheelchair --apply --solver-mode optimal
 
 ## 构建便携版
 
-构建者需要安装 Python、项目依赖和可用 JDK。构建产物采用 PyInstaller one-dir 结构。
+构建者需要安装 `.python-version` 指定的 64 位 Python 和可用 JDK。构建脚本在 `build/release-venv/` 创建独立环境，并使用 `requirements-build.txt` 固定工具链版本；资源制作所用的 OpenCV、NumPy 不进入便携包。源码运行仍支持 Python 3.10+。构建产物采用 PyInstaller one-dir 结构。
 
 构建程序本体：
 
@@ -202,6 +208,18 @@ dist/ThaumcraftNexus/
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_portable.ps1 -OutputDir .\build\logbook-portable
 ```
+
+可用 `-PythonExe` 指定构建用的 Python 路径。`-SkipPyInstallerInstall` 仅复用已创建且依赖校验通过的发布环境；`-SkipJavaAgentBuild` 显式复用已有 Agent。常规构建遇到 Java 编译失败会立即停止，避免把旧 Agent 混入新版本。
+
+构建后可验证冻结程序是否能加载界面与资源：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke_portable.ps1 -AppDir .\dist\ThaumcraftNexus
+```
+
+GitHub Actions 会在 `main` 更新及 Pull Request 时运行 Windows 测试、Java 编译和便携包检查。发布 `v主版本.次版本.修订号` 标签（例如 `v1.0.0`）后，会重新测试、构建，并自动在 GitHub Releases 上传完整 ZIP 与 SHA-256 校验文件。带后缀的标签（例如 `v1.0.0-rc.1`）发布为预览版；无需维护独立 Windows 分支。
+
+工具链固定用于控制构建输入，不承诺不同机器上的二进制逐字节相同。
 
 ## 数据文件
 
@@ -244,6 +262,14 @@ python tools\render_logbook_preview.py
 ```
 
 预览输出到 `build/logbook-previews/`。底图使用 `image/thaumonomicon_bg_clean.png`，原始参考 JPG 保留；如需重新修补底图，开发环境额外安装 `opencv-python-headless` 后运行 `python tools\prepare_logbook_background.py`。OpenCV 不属于程序运行依赖。
+
+可用现有知识库、仓库棋盘样本和固定随机种子生成离线求解基准，无需额外数据库：
+
+```powershell
+python tools\benchmark_solver.py > build\solver-benchmark.json
+```
+
+默认运行两个仓库样本和 20 个生成棋盘，输出合法性、放置数量、阻塞缺口、合成次数和耗时。`--seed`、`--generated`、`--mode` 可调整样本与策略；`--solver-source` 可载入可信的旧版 `search.py` 对比。生成棋盘不代表真实玩家分布，搜索未成功也不证明无解。最少要素模式会继续尝试其他候选策略，避免首个贪心策略失败就提前放弃。
 
 ## 项目结构
 

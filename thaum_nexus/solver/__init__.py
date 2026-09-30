@@ -1,3 +1,3 @@
-from .search import NoSolutionError, SearchConfig, solve, validate_solution
+from .search import NoSolutionError, SearchConfig, SolverCancelled, solve, validate_solution
 
-__all__ = ["NoSolutionError", "SearchConfig", "solve", "validate_solution"]
+__all__ = ["NoSolutionError", "SearchConfig", "SolverCancelled", "solve", "validate_solution"]

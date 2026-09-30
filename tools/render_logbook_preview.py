@@ -18,6 +18,8 @@ sys.path.insert(0, str(ROOT))
 from thaum_nexus.gui_app import ThaumNexusGui
 from thaum_nexus.data_model import BoardState
 from thaum_nexus.solver import solve
+from thaum_nexus.resources import plan_resource_usage
+from thaum_nexus.resource_preview import describe_resources
 
 
 def export_canvas(view, output: Path) -> None:
@@ -108,6 +110,9 @@ def main() -> None:
         solution = solve(board, gui.kb)
         gui.note_name.set("笔记：基础要素研究")
         gui.placement_count.set(f"放置：{len(solution.placements)}")
+        plan = plan_resource_usage(gui.kb, solution.placements.values(), {key: 20 for key in gui.kb.primal})
+        gui.logbook.resource_summary = describe_resources(gui.kb, {"resources": plan.to_dict()}).summary
+        gui.logbook.preview_regions = gui.board_renderer.describe_cells(board, solution)
         gui.logbook.set_page("success", preview=gui.board_renderer.render(board, solution, paper=True))
         gui.worker_label.set("状态：完成")
         gui.buttons['save'].configure(state='normal')

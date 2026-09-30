@@ -14,6 +14,9 @@ from .client_bridge import (
 from .knowledge_base import KnowledgeBase
 from .overlay import BoardImageRenderer
 from .paths import app_root, resource_path, resource_root, runtime_root
+from .diagnostics import diagnose_error
+from .persistence import atomic_write_json, read_settings_json
+from .version import get_build_info, get_version_label
 
 
 GITHUB_URL = "https://github.com/CaeliaEve/thaumcraft-nexus"
@@ -60,8 +63,11 @@ class ThaumNexusGui:
         self.canvas = None
         self.logbook = None
         self.log_lines: list[str] = []
+        self.settings_warnings = []
         self.details_window = None
         self.details_text = None
+        self.resources_window = None
+        self.resource_preview = None
         self.status = None
         self.note_name = None
         self.placement_count = None
@@ -89,13 +95,16 @@ class ThaumNexusGui:
         self.stop_event: threading.Event | None = None
         self.busy = False
         self.cancellable_busy = False
+        self.closing = False
+        self._worker_poll_job = None
+        self._close_job = None
 
     def run(self) -> int:
         import tkinter as tk
         from tkinter import ttk
 
         self.tk = tk.Tk()
-        self.tk.title("Thaumcraft Nexus")
+        self.tk.title("Thaumcraft Nexus · " + get_version_label(self.resource_root))
         self.tk.geometry("1024x681")
         self.tk.minsize(1024, 681)
 
@@ -103,6 +112,10 @@ class ThaumNexusGui:
         self._build_layout(tk, ttk)
         self._set_status("准备就绪。")
         self._append_log("准备就绪。")
+        if self.settings_warnings:
+            self._set_status(self.settings_warnings[0].title + "，已回退默认设置；请查看详情。")
+            for warning in self.settings_warnings:
+                self._append_log(warning.title + "：" + warning.advice + "\n" + warning.details)
         self.tk.mainloop()
         return 0
 
@@ -251,6 +264,7 @@ class ThaumNexusGui:
         from .logbook_view import LogbookView
 
         assert self.tk is not None
+        self.tk.protocol("WM_DELETE_WINDOW", self._request_close)
         self.tk.configure(bg="#090705")
         self.note_name = tk.StringVar(master=self.tk, value="笔记：—")
         self.placement_count = tk.StringVar(master=self.tk, value="放置：—")
@@ -263,7 +277,7 @@ class ThaumNexusGui:
         actions += [("settings", "设置", "", self._open_settings),
                     ("stop", "停止当前任务", "", self._stop_current_task)]
         self.logbook = LogbookView(self.tk, resource_path(BACKGROUND_IMAGE, self.resource_root),
-                                   actions, self._show_details, self._open_github)
+                                   actions, self._show_details, self._open_github, self._show_resources)
         self.canvas = self.logbook.canvas
         self.buttons = {key: action for key, action in self.logbook.actions.items() if key != "stop"}
         self.stop_button = self.logbook.actions["stop"]
@@ -314,13 +328,50 @@ class ThaumNexusGui:
         top, bottom = text.yview()
         text.configure(state="normal")
         text.delete("1.0", "end")
-        text.insert("1.0", "当前笔记：" + self.logbook.note + "\n\n" + self.status.get() +
+        text.insert("1.0", "版本：" + get_version_label(self.resource_root) + "\n当前笔记：" + self.logbook.note + "\n\n" + self.status.get() +
                     "\n\n" + "\n".join(self.log_lines))
         text.configure(state="disabled")
         if bottom >= 1.0:
             text.see("end")
         else:
             text.yview_moveto(top)
+
+    def _show_resources(self) -> None:
+        import tkinter as tk
+        from tkinter import ttk, scrolledtext
+        if self.resource_preview is None:
+            return
+        if self.resources_window is not None and self.resources_window.winfo_exists():
+            self.resources_window.destroy()
+        dialog = tk.Toplevel(self.tk)
+        self.resources_window = dialog
+        dialog.title("资源计划 · " + self.logbook.note)
+        dialog.geometry("700x480")
+        dialog.minsize(560, 360)
+        dialog.transient(self.tk)
+        frame = ttk.Frame(dialog, padding=16)
+        frame.pack(fill="both", expand=True)
+        ttk.Label(frame, text="\n".join(self.resource_preview.summary)).pack(anchor="w", pady=(0, 12))
+        table_frame = ttk.Frame(frame)
+        table_frame.pack(fill="both", expand=True)
+        columns = ("name", "required", "available", "synthesis", "shortage")
+        table = ttk.Treeview(table_frame, columns=columns, show="headings", height=7)
+        for key, label in zip(columns, ("要素", "放置需求", "读取时库存", "预计合成", "阻塞缺口")):
+            table.heading(key, text=label)
+            table.column(key, width=190 if key == "name" else 90, minwidth=65, anchor="w" if key == "name" else "center")
+        scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=table.yview)
+        table.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        table.pack(fill="both", expand=True)
+        for row in self.resource_preview.rows:
+            table.insert("", "end", values=(f"{row.name} ({row.key})", row.required, row.available, row.synthesis, row.shortage),
+                         tags=("shortage",) if row.shortage else ())
+        table.tag_configure("shortage", foreground="#9b241c")
+        details = scrolledtext.ScrolledText(frame, height=7, wrap="word", font=("Microsoft YaHei", 10))
+        details.pack(fill="both", expand=True, pady=(12, 0))
+        details.insert("1.0", self.resource_preview.details)
+        details.configure(state="disabled")
+        dialog.bind("<Escape>", lambda _event: dialog.destroy())
 
     def _button_text(self, action: str) -> str:
         shortcut = self._shortcut_display(self.shortcuts.get(action, ""))
@@ -330,14 +381,10 @@ class ThaumNexusGui:
         return self.runtime_root / "gui_settings.json"
 
     def _load_settings_payload(self) -> dict[str, Any]:
-        path = self._settings_path()
-        if not path.exists():
-            return {}
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-        return payload if isinstance(payload, dict) else {}
+        payload, warning = read_settings_json(self._settings_path())
+        if warning is not None and warning not in self.settings_warnings:
+            self.settings_warnings.append(warning)
+        return payload
 
     def _load_shortcuts(self) -> dict[str, str]:
         shortcuts = dict(DEFAULT_SHORTCUTS)
@@ -430,7 +477,7 @@ class ThaumNexusGui:
             "solverMode": normalize_solver_mode(self.solver_mode),
             "targetPid": "",
         }
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        atomic_write_json(path, payload)
 
     def _save_shortcuts(self) -> None:
         self._save_settings()
@@ -604,7 +651,7 @@ class ThaumNexusGui:
         row += 1
         ttk.Label(
             container,
-            text="关闭时优先使用库存中数量充足的要素；开启后先保证最少放置，格数相同时会均衡基础要素库存并减少合成。",
+            text="关闭时优先使用充足库存；开启后在搜索预算内优先减少放置，格数相同时均衡库存并减少合成，不保证全局最优。",
             style="Muted.TLabel",
         ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
@@ -685,6 +732,7 @@ class ThaumNexusGui:
             if target and not target.isdigit():
                 hint.set("PID 只能是数字；留空表示自动检测。")
                 return False
+            previous = (self.target_pid, self.placement_speed, self.solver_mode)
             self.target_pid = target
             self.placement_speed = speed
             self.solver_mode = (
@@ -692,7 +740,13 @@ class ThaumNexusGui:
                 if optimal_mode_var.get()
                 else DEFAULT_SOLVER_MODE
             )
-            self._save_settings()
+            try:
+                self._save_settings()
+            except OSError as exc:
+                self.target_pid, self.placement_speed, self.solver_mode = previous
+                hint.set("保存失败：请检查程序目录的写入权限或磁盘空间。原设置保持不变。")
+                self._append_log(f"设置保存失败：{exc}")
+                return False
             hint.set(
                 f"已保存：{self._solver_mode_summary()}；摆放速度：{self._placement_speed_summary()}；目标 JVM：{self.target_pid}"
                 if self.target_pid
@@ -730,8 +784,16 @@ class ThaumNexusGui:
                 hint.set(f"{self._shortcut_display(sequence)} 已用于“{ACTION_LABELS[conflict]}”。")
                 dialog.unbind("<KeyPress>")
                 return "break"
+            previous = self.shortcuts[action]
             self.shortcuts[action] = sequence
-            self._save_shortcuts()
+            try:
+                self._save_shortcuts()
+            except OSError as exc:
+                self.shortcuts[action] = previous
+                hint.set("快捷键保存失败：请检查目录写入权限或磁盘空间。")
+                self._append_log(f"快捷键保存失败：{exc}")
+                dialog.unbind("<KeyPress>")
+                return "break"
             self._bind_shortcuts()
             self._refresh_shortcut_labels()
             value_vars[action].set(self._shortcut_display(sequence))
@@ -743,8 +805,15 @@ class ThaumNexusGui:
         dialog.focus_force()
 
     def _reset_shortcuts(self, value_vars: dict[str, Any], hint: Any) -> None:
+        previous = self.shortcuts
         self.shortcuts = dict(DEFAULT_SHORTCUTS)
-        self._save_shortcuts()
+        try:
+            self._save_shortcuts()
+        except OSError as exc:
+            self.shortcuts = previous
+            hint.set("恢复默认失败：请检查目录写入权限或磁盘空间。")
+            self._append_log(f"设置保存失败：{exc}")
+            return
         self._bind_shortcuts()
         self._refresh_shortcut_labels()
         for action in ACTION_ORDER:
@@ -845,9 +914,16 @@ class ThaumNexusGui:
         cancellable: bool,
     ) -> None:
         assert self.tk is not None
-        self.worker_queue = queue.Queue()
+        if self.busy or self.closing or (self.worker_thread is not None and self.worker_thread.is_alive()):
+            return
+        if self.resources_window is not None and self.resources_window.winfo_exists():
+            self.resources_window.destroy()
+            self.resources_window = None
+        worker_queue: queue.Queue[tuple[str, Any]] = queue.Queue()
+        stop_event = threading.Event()
+        self.worker_queue = worker_queue
         self.batch_total = 0
-        self.stop_event = threading.Event()
+        self.stop_event = stop_event
         self.busy = True
         self.cancellable_busy = cancellable
         self._set_busy_ui(label, cancellable=cancellable)
@@ -855,21 +931,23 @@ class ThaumNexusGui:
         self._append_log(f"开始：{label}")
 
         def emit(kind: str, payload: Any) -> None:
-            assert self.worker_queue is not None
-            self.worker_queue.put((kind, payload))
+            worker_queue.put((kind, payload))
 
         def runner() -> None:
             try:
-                payload = task(self.stop_event or threading.Event(), emit)
+                payload = task(stop_event, emit)
                 emit("done", payload)
             except Exception as exc:
                 emit("error", exc)
 
         self.worker_thread = threading.Thread(target=runner, name="ThaumNexusGuiWorker", daemon=True)
         self.worker_thread.start()
-        self.tk.after(80, self._poll_worker_queue)
+        self._worker_poll_job = self.tk.after(80, self._poll_worker_queue)
 
     def _poll_worker_queue(self) -> None:
+        if self._worker_poll_job is not None and self.tk is not None:
+            self.tk.after_cancel(self._worker_poll_job)
+            self._worker_poll_job = None
         if self.worker_queue is None:
             return
         while True:
@@ -895,12 +973,44 @@ class ThaumNexusGui:
                 self._append_log(message)
                 self._set_status(message)
             elif kind == "done":
-                self._handle_worker_done(payload)
+                try:
+                    self._handle_worker_done(payload)
+                except Exception as exc:
+                    self._handle_worker_error(exc)
             elif kind == "error":
                 self._handle_worker_error(payload)
 
         if self.busy and self.tk is not None:
-            self.tk.after(120, self._poll_worker_queue)
+            self._worker_poll_job = self.tk.after(120, self._poll_worker_queue)
+
+    def _request_close(self) -> None:
+        if self.closing or self.tk is None:
+            return
+        self.closing = True
+        if self.stop_event is not None:
+            self.stop_event.set()
+        for button in self.buttons.values():
+            button.configure(state="disabled")
+        if self.stop_button is not None:
+            self.stop_button.configure(state="disabled")
+        self._set_status("正在停止任务，确认结束后关闭窗口……")
+        self._poll_close()
+
+    def _poll_close(self) -> None:
+        self._close_job = None
+        if not self.closing or self.tk is None:
+            return
+        if self.worker_thread is not None and self.worker_thread.is_alive():
+            self._close_job = self.tk.after(80, self._poll_close)
+            return
+        self._poll_worker_queue()
+        if not self.closing:
+            return  # An unconfirmed Java mutation needs to remain visible.
+        if self._worker_poll_job is not None:
+            self.tk.after_cancel(self._worker_poll_job)
+            self._worker_poll_job = None
+        self.tk.destroy()
+        self.tk = None
 
     def _handle_worker_done(self, payload: dict[str, Any]) -> None:
         kind = payload.get("kind")
@@ -948,7 +1058,7 @@ class ThaumNexusGui:
             self._finish_worker_ui()
 
     def _handle_worker_error(self, exc: Exception) -> None:
-        from .client_bridge import OperationCancelled
+        from .client_bridge import OperationCancelled, UnsafeAgentStateError
 
         if isinstance(exc, OperationCancelled):
             if self.logbook:
@@ -958,13 +1068,19 @@ class ThaumNexusGui:
             self._finish_worker_ui()
             return
 
-        error_text, error_json = self._write_error_report(exc)
+        diagnostic = diagnose_error(exc)
+        if isinstance(exc, UnsafeAgentStateError):
+            self.closing = False
         if self.logbook:
-            self.logbook.set_page("error", self._short_error(exc))
-        self._set_status(f"任务失败：{self._short_error(exc)}")
-        self._append_log(f"失败：{self._short_error(exc)}")
-        self._append_log(f"完整错误已写入：{error_text}")
-        self._append_log(f"诊断 JSON：{error_json}")
+            self.logbook.set_page("error", diagnostic.title + "\n" + diagnostic.advice)
+        self._set_status(f"任务失败：{diagnostic.title}")
+        self._append_log(f"{diagnostic.title}：{diagnostic.advice}\n{diagnostic.details}")
+        try:
+            error_text, error_json = self._write_error_report(exc)
+            self._append_log(f"完整错误已写入：{error_text}")
+            self._append_log(f"诊断 JSON：{error_json}")
+        except OSError as report_error:
+            self._append_log(f"诊断文件未能保存，原始错误保留在本窗口：{report_error}")
         self._finish_worker_ui()
 
     def _stop_current_task(self) -> None:
@@ -990,7 +1106,7 @@ class ThaumNexusGui:
         self.busy = False
         self.cancellable_busy = False
         for key, button in self.buttons.items():
-            button.configure(state="disabled" if key == "save" and self.rendered is None else "normal")
+            button.configure(state="disabled" if self.closing or (key == "save" and self.rendered is None) else "normal")
         if self.stop_button is not None:
             self.stop_button.configure(state="disabled")
         if self.worker_label is not None:
@@ -999,20 +1115,26 @@ class ThaumNexusGui:
             self.worker_label.set(f"状态：{label}")
 
     def _show_solution(self, *, board: Any, solution: Any, note_label: str, payload: dict[str, Any]) -> None:
+        from .resource_preview import describe_resources
         self.rendered = self.board_renderer.render(board, solution)
         out_dir = self.runtime_root
         out_dir.mkdir(parents=True, exist_ok=True)
         self.solution_image_path = out_dir / "current_solution.png"
         self.rendered.save(self.solution_image_path)
         solution_json = out_dir / "current_solution.json"
-        solution_json.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        atomic_write_json(solution_json, payload)
         self.solution_payload = payload
+        self.resource_preview = describe_resources(self.kb, payload)
         if self.note_name is not None:
             self.note_name.set(f"笔记：{note_label}")
         if self.placement_count is not None:
             self.placement_count.set(f"放置：{len(solution.placements)}")
         if self.logbook:
+            self.logbook.resource_summary = self.resource_preview.summary
+            self.logbook.preview_regions = self.board_renderer.describe_cells(board, solution)
             self.logbook.set_page("success", preview=self.board_renderer.render(board, solution, paper=True))
+        if self.resources_window is not None and self.resources_window.winfo_exists():
+            self._show_resources()
         self.buttons["save"].configure(state="normal")
 
     def _save_solution(self) -> None:
@@ -1040,21 +1162,26 @@ class ThaumNexusGui:
         out_dir = self.runtime_root
         out_dir.mkdir(parents=True, exist_ok=True)
         path = out_dir / name
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        atomic_write_json(path, payload)
         return path
 
     def _write_error_report(self, exc: Exception) -> tuple[Path, Path]:
+        diagnostic = diagnose_error(exc)
         payload = {
             "source": "thaum-nexus-gui",
             "status": "error",
             "action": "gui-worker",
             "errorType": type(exc).__name__,
             "error": str(exc),
+            "code": diagnostic.code,
+            "advice": diagnostic.advice,
+            "details": diagnostic.details,
+            "build": get_build_info(self.resource_root),
         }
         error_json = self._write_runtime_json("gui_last_error.json", payload)
         error_text = self.runtime_root / "gui_last_error.txt"
         error_text.parent.mkdir(parents=True, exist_ok=True)
-        error_text.write_text(str(exc).strip() + "\n", encoding="utf-8")
+        error_text.write_text(diagnostic.title + "\n" + diagnostic.advice + "\n\n" + diagnostic.details + "\n", encoding="utf-8")
         return error_text, error_json
 
     def _set_status(self, text: str) -> None:

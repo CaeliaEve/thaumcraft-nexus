@@ -3,7 +3,7 @@ from __future__ import annotations
 import heapq
 from dataclasses import dataclass
 from itertools import count
-from typing import Mapping
+from typing import Callable, Mapping
 
 from thaum_nexus.data_model import BoardState, CellKind, ConnectionPath, HexCoord, Solution, hex_neighbors
 from thaum_nexus.knowledge_base import KnowledgeBase
@@ -15,6 +15,15 @@ class NoSolutionError(RuntimeError):
     """Raised when the current board cannot be solved with the known aspect graph."""
 
 
+class SolverCancelled(RuntimeError):
+    """Raised when cooperative search cancellation is requested."""
+
+
+def _check_cancelled(check: Callable[[], bool] | None) -> None:
+    if check is not None and check():
+        raise SolverCancelled("solver search cancelled")
+
+
 @dataclass(frozen=True)
 class SearchConfig:
     max_iterations: int = 32
@@ -22,6 +31,7 @@ class SearchConfig:
     zero_inventory_penalty: float = 4.0
     minimize_placements: bool = False
     optimal_search_state_limit: int = 96
+    cancel_check: Callable[[], bool] | None = None
 
 
 @dataclass(frozen=True)
@@ -33,6 +43,7 @@ class _StaticPathSearchContext:
 
 @dataclass(frozen=True)
 class _PathSearchContext:
+    cancel_check: Callable[[], bool] | None
     aspect_by_coord: dict[HexCoord, str]
     empty_coords: set[HexCoord]
     neighbors_by_coord: dict[HexCoord, tuple[HexCoord, ...]]
@@ -57,6 +68,7 @@ def solve(board: BoardState, kb: KnowledgeBase, config: SearchConfig | None = No
     """Connect all ROOT cells by placing aspects into empty cells."""
 
     config = config or SearchConfig()
+    _check_cancelled(config.cancel_check)
     if len(board.roots) < 2:
         return Solution(placements={}, warnings=("board has fewer than two roots",))
 
@@ -72,6 +84,7 @@ def _solve_greedy(board: BoardState, kb: KnowledgeBase, config: SearchConfig) ->
     static_context = _build_static_path_search_context(board, kb)
 
     for _ in range(config.max_iterations):
+        _check_cancelled(config.cancel_check)
         components, coord_to_component = connected_components(board, kb, placements)
         root_ids = root_component_ids(board, coord_to_component)
         if len(root_ids) <= 1:
@@ -149,12 +162,15 @@ def _solve_minimal_placements(
     and primal-aspect balance decide the winner.
     """
 
-    candidates = [_solve_greedy(board, kb, config)]
-    for candidate_config in _minimal_candidate_configs(board, kb, config):
+    candidates: list[Solution] = []
+    for candidate_config in (config, *_minimal_candidate_configs(board, kb, config)):
         try:
             candidates.append(_solve_greedy(board, kb, candidate_config))
         except NoSolutionError:
             continue
+
+    if not candidates:
+        raise NoSolutionError("no legal solution found by candidate strategies")
 
     best = min(
         candidates,
@@ -211,6 +227,7 @@ def _minimal_candidate_configs(
         candidates.append(
             SearchConfig(
                 max_iterations=config.max_iterations,
+                cancel_check=config.cancel_check,
                 aspect_inventory=config.aspect_inventory,
                 zero_inventory_penalty=config.zero_inventory_penalty,
                 optimal_search_state_limit=config.optimal_search_state_limit,
@@ -227,6 +244,7 @@ def _minimal_candidate_configs(
         candidates.append(
             SearchConfig(
                 max_iterations=config.max_iterations,
+                cancel_check=config.cancel_check,
                 aspect_inventory={
                     aspect: primal_preference.get(aspect, 0)
                     for aspect in kb.aspects
@@ -248,6 +266,7 @@ def _minimal_candidate_configs(
         candidates.append(
             SearchConfig(
                 max_iterations=config.max_iterations,
+                cancel_check=config.cancel_check,
                 aspect_inventory=exploration_inventory,
                 zero_inventory_penalty=config.zero_inventory_penalty,
                 optimal_search_state_limit=config.optimal_search_state_limit,
@@ -278,6 +297,7 @@ def _search_connection_orders(
         chosen_paths: tuple[ConnectionPath, ...],
     ) -> None:
         nonlocal best, states_visited, exhausted
+        _check_cancelled(config.cancel_check)
         if states_visited >= state_limit:
             exhausted = True
             return
@@ -433,6 +453,7 @@ def find_connection_path(
     """Dijkstra search over combined board coordinate + aspect states."""
 
     config = config or SearchConfig()
+    _check_cancelled(config.cancel_check)
     return _find_connection_path(
         board=board,
         start_coords=start_coords,
@@ -492,7 +513,9 @@ def _build_path_search_context(
 
     static_context = static_context or _build_static_path_search_context(board, kb)
 
+    _check_cancelled(config.cancel_check)
     return _PathSearchContext(
+        cancel_check=config.cancel_check,
         aspect_by_coord=aspect_by_coord,
         empty_coords=empty_coords,
         neighbors_by_coord=static_context.neighbors_by_coord,
@@ -561,6 +584,7 @@ def _find_connection_paths(
         heapq.heappush(heap, (0.0, 0, next(sequence), coord, aspect))
 
     while heap:
+        _check_cancelled(context.cancel_check)
         cost, steps, _seq, coord, aspect = heapq.heappop(heap)
         key = (coord, aspect)
         if cost != dist.get(key):

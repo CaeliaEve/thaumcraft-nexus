@@ -1,0 +1,65 @@
+name: Versioned Windows release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+          architecture: x64
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '8'
+      - name: Validate version tag
+        shell: powershell
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$') {
+            throw "Expected vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-prerelease"
+          }
+      - name: Test
+        run: |
+          python -m pip install Pillow==12.3.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -v
+      - name: Build release
+        shell: powershell
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: ./scripts/build_portable.ps1 -OutputDir build/release-dist -Version $env:RELEASE_TAG
+      - name: Smoke test frozen resources
+        shell: powershell
+        run: ./scripts/smoke_portable.ps1 -AppDir build/release-dist/ThaumcraftNexus
+      - name: ZIP and checksum
+        shell: powershell
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          ./build/release-venv/Scripts/python.exe tools/release_tools.py package build/release-dist/ThaumcraftNexus "build/releases/ThaumcraftNexus-$env:RELEASE_TAG-windows-x64.zip"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Publish GitHub Release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $assets = Get-ChildItem -LiteralPath build/releases -File | ForEach-Object { $_.FullName }
+          $releaseArgs = @('release', 'create', $env:RELEASE_TAG, '--verify-tag', '--generate-notes', '--title', "Thaumcraft Nexus $env:RELEASE_TAG")
+          if ($env:RELEASE_TAG.Contains('-')) { $releaseArgs += '--prerelease' }
+          & gh @releaseArgs @assets
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

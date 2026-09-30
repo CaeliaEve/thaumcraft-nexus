@@ -27,10 +27,142 @@ class LogbookUiTests(unittest.TestCase):
         self.root.update()
 
     def close_window(self):
-        for job in self.root.tk.call("after", "info"):
-            self.root.after_cancel(job)
-        self.root.destroy()
+        try:
+            for job in self.root.tk.call("after", "info"):
+                self.root.after_cancel(job)
+            self.root.destroy()
+        except tk.TclError:
+            pass  # A shutdown test may already have destroyed the interpreter's window.
         self.assertEqual(self.callback_errors, [], "Tk callbacks must not fail during use or shutdown")
+
+    def test_close_waits_for_worker_acknowledgement_and_blocks_new_tasks(self):
+        import threading
+        import time
+        entered, release, cancelled = threading.Event(), threading.Event(), threading.Event()
+
+        def task(stop, emit):
+            entered.set()
+            stop.wait(2)
+            if stop.is_set():
+                cancelled.set()
+            release.wait(2)
+            return {"kind": "test"}
+
+        self.gui._start_worker("测试", task, cancellable=True)
+        self.assertTrue(entered.wait(1))
+        original_thread = self.gui.worker_thread
+        self.addCleanup(release.set)
+        self.gui._request_close()
+        self.assertTrue(cancelled.wait(1), "Closing must signal cooperative cancellation")
+        self.assertTrue(self.root.winfo_exists(), "Window must wait for acknowledgement")
+        self.gui._start_worker("不可启动", lambda *_: self.calls.append("unexpected"), cancellable=True)
+        self.assertIs(self.gui.worker_thread, original_thread)
+        release.set()
+        original_thread.join(1)
+        deadline = time.monotonic() + 2
+        while self.gui.tk is not None and time.monotonic() < deadline:
+            self.root.update()
+            time.sleep(0.01)
+        self.assertIsNone(self.gui.tk)
+        self.assertEqual(self.calls, [])
+
+    def test_busy_worker_cannot_be_replaced_by_another_start(self):
+        import threading
+        release = threading.Event()
+        self.addCleanup(release.set)
+        self.gui._start_worker("测试", lambda *_: release.wait(2), cancellable=True)
+        original = self.gui.worker_thread
+        self.gui._start_worker("重复", lambda *_: self.calls.append("unexpected"), cancellable=True)
+        self.assertIs(self.gui.worker_thread, original)
+        release.set()
+        original.join(1)
+        self.assertEqual(self.calls, [])
+
+    def test_error_report_write_failure_still_restores_controls_and_shows_advice(self):
+        self.gui.runtime_root = self.gui.runtime_root / "not-a-directory"
+        self.gui.runtime_root.write_text("occupied", encoding="utf-8")
+        self.gui.busy = True
+        self.gui._handle_worker_error(TimeoutError("attach timed out"))
+        self.assertFalse(self.gui.busy)
+        self.assertEqual(self.gui.buttons["read"].state, "normal")
+        self.assertIn("超时", self.gui.logbook.message)
+        self.assertTrue(any("诊断" in line for line in self.gui.log_lines))
+
+    def test_solution_resources_and_cell_tooltips_follow_scaled_preview(self):
+        from thaum_nexus.note_io import ResearchNote
+        from thaum_nexus.solver import solve
+        from types import SimpleNamespace
+        note = ResearchNote.load(Path(__file__).parent / "fixtures" / "notes" / "two_roots_line_note.json")
+        solution = solve(note.board, self.gui.kb)
+        self.gui._show_solution(board=note.board, solution=solution, note_label="测试",
+                                payload={"resources": {"required": {"lux": 1}, "available": {"lux": 3},
+                                                       "synthesis": [], "shortages": {}}})
+        self.root.geometry("1440x900")
+        self.root.update()
+        view = self.gui.logbook
+        texts = [view.canvas.itemcget(i, "text") for i in view.canvas.find_all() if view.canvas.type(i) == "text"]
+        self.assertTrue(any("资源" in text for text in texts))
+        region = next(region for region in view.preview_regions if "放置" in region[3])
+        left, top, factor = view.preview_transform
+        event = SimpleNamespace(x=left + region[0] * factor, y=top + region[1] * factor)
+        view._motion(event)
+        view._show_tooltip()
+        tooltip = " ".join(view.canvas.itemcget(i, "text") for i in view.canvas.find_withtag("tooltip") if view.canvas.type(i) == "text")
+        self.assertIn("放置", tooltip)
+        self.assertIn("1", tooltip)
+        self.gui._show_resources()
+        self.assertTrue(self.gui.resources_window.winfo_exists())
+
+    def test_failed_settings_save_keeps_dialog_open_and_previous_values(self):
+        from tkinter import ttk
+        self.gui.runtime_root = self.gui.runtime_root / "blocked"
+        self.gui.runtime_root.write_text("occupied", encoding="utf-8")
+        self.gui._open_settings()
+        dialog = next(w for w in self.root.winfo_children() if isinstance(w, tk.Toplevel))
+        widgets = list(dialog.winfo_children())
+        all_widgets = []
+        while widgets:
+            widget = widgets.pop()
+            all_widgets.append(widget)
+            widgets.extend(widget.winfo_children())
+        toggle = next(w for w in all_widgets if isinstance(w, ttk.Checkbutton))
+        before = self.gui.solver_mode
+        toggle.invoke()
+        next(w for w in all_widgets if isinstance(w, ttk.Button) and w.cget("text") == "保存并关闭").invoke()
+        self.root.update()
+        self.assertTrue(dialog.winfo_exists())
+        self.assertEqual(self.gui.solver_mode, before)
+        labels = [str(w.cget("text")) for w in all_widgets if isinstance(w, ttk.Label)]
+        self.assertTrue(any("保存失败" in value for value in labels))
+        self.assertEqual(self.callback_errors, [])
+
+    def test_unconfirmed_agent_cancellation_keeps_window_open_for_diagnosis(self):
+        import queue
+        from thaum_nexus.client_bridge import UnsafeAgentStateError
+        self.gui.worker_queue = queue.Queue()
+        self.gui.worker_queue.put(("error", UnsafeAgentStateError("Java Agent did not confirm cancellation")))
+        self.gui._request_close()
+        self.assertIsNotNone(self.gui.tk)
+        self.assertTrue(self.root.winfo_exists())
+        self.assertFalse(self.gui.closing)
+        self.assertEqual(self.gui.logbook.state, "error")
+
+    def test_completed_read_with_unwritable_output_becomes_visible_error(self):
+        import queue
+        from thaum_nexus.client_bridge import CurrentNoteResult
+        from thaum_nexus.note_io import ResearchNote
+        from thaum_nexus.solver import solve
+        note = ResearchNote.load(Path(__file__).parent / "fixtures" / "notes" / "two_roots_line_note.json")
+        result = CurrentNoteResult(note, solve(note.board, self.gui.kb), Path("note.json"))
+        self.gui.runtime_root = self.gui.runtime_root / "blocked"
+        self.gui.runtime_root.write_text("occupied", encoding="utf-8")
+        self.gui.worker_queue = queue.Queue()
+        self.gui.worker_queue.put(("done", {"kind": "read", "result": result}))
+        self.gui.busy = True
+        self.gui._poll_worker_queue()
+        self.assertEqual(self.gui.logbook.state, "error")
+        self.assertFalse(self.gui.busy)
+        self.assertEqual(self.callback_errors, [])
 
     def click(self, x, y):
         self.gui.canvas.event_generate("<Motion>", x=x, y=y)

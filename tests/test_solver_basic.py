@@ -351,6 +351,54 @@ class SolverBasicTests(unittest.TestCase):
         validate_solution(board, kb, default_solution)
         validate_solution(board, kb, resource_solution)
 
+class SolverCancellationTests(unittest.TestCase):
+    def test_cancel_during_real_search_stops_both_modes(self):
+        # Removing checks inside the heap loop makes this return a solution.
+        for minimal in (False, True):
+            with self.subTest(minimal=minimal):
+                checks = 0
+                def cancelled():
+                    nonlocal checks
+                    checks += 1
+                    return checks >= 20
+                try:
+                    solve(radius_board(4), KnowledgeBase.load(), SearchConfig(
+                        minimize_placements=minimal, cancel_check=cancelled))
+                except RuntimeError as exc:
+                    self.assertEqual(type(exc).__name__, 'SolverCancelled')
+                else:
+                    self.fail('search ignored cancellation')
+                self.assertEqual(checks, 20)
+
+    def test_bridge_maps_search_cancellation_to_operation_cancelled(self):
+        from unittest.mock import patch
+        from thaum_nexus import client_bridge
+        checks = 0
+        class StopEvent:
+            def is_set(self):
+                nonlocal checks
+                checks += 1
+                return checks >= 20
+        payload = radius_board(4).to_dict()
+        with patch.object(client_bridge, 'export_current_note',
+                          return_value=(payload, Path('unused.json'), '', '')):
+            with self.assertRaises(client_bridge.OperationCancelled):
+                client_bridge.read_and_solve_current_note(Path('.'), stop_event=StopEvent())
+
+class SolverSeedRecoveryTests(unittest.TestCase):
+    def test_minimal_search_recovers_when_first_greedy_strategy_gets_stuck(self):
+        # Aborting on the first seed discards a valid five-placement alternative.
+        roots = {(-2, 2): 'tempus', (-1, 2): 'perfodio',
+                 (0, 2): 'telum', (2, -2): 'permutatio'}
+        cells = [dict(q=q, r=r, kind='root', aspect=roots[q, r])
+                 if (q, r) in roots else dict(q=q, r=r, kind='empty')
+                 for q in range(-2, 3) for r in range(-2, 3) if abs(q+r) <= 2]
+        board = BoardState.from_dict({'name': 'seed-recovery', 'cells': cells})
+        kb = KnowledgeBase.load()
+        solution = solve(board, kb, SearchConfig(minimize_placements=True))
+        validate_solution(board, kb, solution)
+        self.assertLessEqual(len(solution.placements), 5)
+
 
 if __name__ == "__main__":
     unittest.main()
