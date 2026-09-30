@@ -14,6 +14,8 @@ class LogbookUiTests(unittest.TestCase):
         self.gui = ThaumNexusGui()
         self.gui.runtime_root = Path(self.tmp.name)
         self.root = tk.Tk()
+        # Hosted Windows desktops can be smaller than the resize cases below.
+        self.root.maxsize(4096, 4096)
         self.callback_errors = []
         self.root.report_callback_exception = lambda *error: self.callback_errors.append(error)
         self.addCleanup(self.close_window)
@@ -234,6 +236,26 @@ class LogbookUiTests(unittest.TestCase):
         self.root.update()
         self.assertEqual(self.calls, ["read"])
 
+    def test_reverse_tab_works_when_tk_lacks_x11_keysym(self):
+        from unittest.mock import patch
+        from tkinter import ttk
+        original_bind = tk.Canvas.bind
+
+        def older_tk_bind(canvas, sequence=None, func=None, add=None):
+            if sequence == "<ISO_Left_Tab>":
+                raise tk.TclError('bad event type or keysym "ISO_Left_Tab"')
+            return original_bind(canvas, sequence, func, add)
+
+        self.gui.canvas.destroy()
+        with patch.object(tk.Canvas, "bind", older_tk_bind):
+            self.gui._build_layout(tk, ttk)
+        self.root.update()
+        self.gui.logbook.focus = "apply"
+        self.gui.canvas.focus_force()
+        self.gui.canvas.event_generate("<Shift-Tab>")
+        self.root.update()
+        self.assertEqual(self.gui.logbook.focus, "read")
+
     def test_configured_enter_shortcuts_override_focused_menu_action(self):
         self.gui.buttons["apply"].command = lambda: self.calls.append("apply")
         self.gui.canvas.focus_force()
@@ -271,6 +293,7 @@ class LogbookUiTests(unittest.TestCase):
     def test_enlarged_menu_target_and_old_position_do_not_overlap(self):
         self.root.geometry("1536x1022+0+0")
         self.root.update()
+        self.assertEqual(self.gui.canvas.winfo_width(), 1536)
         self.click(458, 315)
         self.assertEqual(self.calls, ["read"])
         self.click(120, 210)

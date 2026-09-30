@@ -85,7 +85,11 @@ class LogbookView:
         self.canvas.bind("<Leave>", self._leave)
         self.canvas.bind("<Button-1>", self._click)
         self.canvas.bind("<Tab>", lambda e: self._move_focus(-1 if e.state & 1 else 1))
-        self.canvas.bind("<ISO_Left_Tab>", lambda _e: self._move_focus(-1))
+        self.canvas.bind("<Shift-Tab>", lambda _e: self._move_focus(-1))
+        try:
+            self.canvas.bind("<ISO_Left_Tab>", lambda _e: self._move_focus(-1))
+        except tk.TclError:
+            pass  # Older Windows Tk does not define the X11 reverse-tab keysym.
         self.canvas.bind("<Up>", lambda _e: self._move_focus(-1))
         self.canvas.bind("<Down>", lambda _e: self._move_focus(1))
         self.canvas.bind("<Return>", self._activate_focus)
