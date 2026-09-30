@@ -49,6 +49,20 @@ def export_canvas(view, output: Path) -> None:
                     draw.point((x, round(y1)), fill=color)
             else:
                 draw.line(coords, fill=color, width=max(1, round(float(canvas.itemcget(item, "width")))))
+        elif kind in ("rectangle", "polygon"):
+            fill = canvas.itemcget(item, "fill") or None
+            outline = canvas.itemcget(item, "outline") or None
+            if kind == "rectangle":
+                draw.rectangle(coords, fill=fill, outline=outline, width=max(1, round(view.scale)))
+            else:
+                draw.polygon(coords, fill=fill, outline=outline, width=max(1, round(view.scale)))
+        elif kind == "window":
+            widget = canvas.nametowidget(canvas.itemcget(item, "window"))
+            x, y = coords
+            w, h = float(canvas.itemcget(item, "width")), float(canvas.itemcget(item, "height"))
+            draw.rectangle((x,y,x+w,y+h), fill="#c1a578", outline="#362417")
+            font = ImageFont.truetype(str(fonts / "simsun.ttc"), size=max(9, round(16*view.scale)))
+            draw.text((x+4,y+h/2), widget.get(), font=font, fill="#20150d", anchor="lm")
         elif kind == "text":
             tk_font = tkfont.nametofont(canvas.itemcget(item, "font"), root=canvas)
             config = tk_font.actual()

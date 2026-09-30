@@ -100,6 +100,70 @@ class LogbookUiTests(unittest.TestCase):
         self.assertIsNone(editor.pending)
         self.assertEqual(self.gui.target_pid, "")
 
+    def test_settings_uses_main_window_and_restores_preview(self):
+        from PIL import Image
+        preview = Image.new("RGB", (40, 40), "white")
+        self.gui.logbook.set_page("success", preview=preview)
+        self.gui._open_settings()
+        self.root.update()
+        editor = self.gui.settings_editor
+        self.assertFalse(any(isinstance(w, tk.Toplevel) for w in self.root.winfo_children()))
+        self.assertFalse(self.gui.canvas.winfo_ismapped())
+        self.assertTrue(editor.view.canvas.winfo_ismapped())
+        self.gui._invoke_action("read")
+        self.assertEqual(self.calls, [])
+        editor.cancel()
+        self.root.update()
+        self.assertTrue(self.gui.canvas.winfo_ismapped())
+        self.assertIs(self.gui.logbook.preview, preview)
+        self.assertEqual(self.gui.logbook.state, "success")
+
+    def test_settings_book_controls_work_after_resize(self):
+        from types import SimpleNamespace
+        from thaum_nexus.client_bridge import SOLVER_MODE_OPTIMAL
+        self.gui._open_settings()
+        editor = self.gui.settings_editor
+        view = editor.view
+        self.root.geometry("1440x900")
+        self.root.update()
+        x, y = view.point(600, 374)
+        view.click(SimpleNamespace(x=x, y=y))
+        self.assertEqual(editor.mode.get(), SOLVER_MODE_OPTIMAL)
+        editor.show_page("注入节律")
+        view.set_preset("custom")
+        self.root.update()
+        self.assertTrue(view.fields["delay"].winfo_ismapped())
+        view.move_focus(1, "delay")
+        self.assertEqual(view.focus, "verify")
+        view.fields["delay"].delete(0, "end")
+        view.fields["delay"].insert(0, "123")
+        editor.show_page("快捷符令")
+        self.root.update()
+        self.assertFalse(view.fields["delay"].winfo_ismapped())
+        editor.show_page("注入节律")
+        self.root.update()
+        self.assertEqual(view.fields["delay"].get(), "123")
+        editor.save()
+        self.assertEqual(self.gui.placement_speed["delayMs"], 123)
+
+    def test_settings_pid_typing_survives_redraw_and_shortcuts_stay_isolated(self):
+        self.gui._open_settings()
+        editor = self.gui.settings_editor
+        editor.show_page("世界连接")
+        editor.toggle_manual()
+        field = editor.view.fields["pid"]
+        self.root.update()
+        field.focus_force()
+        for key in "123":
+            field.event_generate("<KeyPress>", keysym=key)
+            self.root.update()
+        self.assertEqual(field.get(), "123")
+        self.assertIs(self.root.focus_get(), field)
+        field.event_generate("<F5>")
+        self.root.update()
+        self.assertEqual(self.calls, [])
+        editor.cancel()
+
     def test_settings_edits_are_drafts_until_save(self):
         import json
         self.gui._open_settings()
@@ -213,13 +277,7 @@ class LogbookUiTests(unittest.TestCase):
         self.gui.runtime_root = self.gui.runtime_root / "blocked"
         self.gui.runtime_root.write_text("occupied", encoding="utf-8")
         self.gui._open_settings()
-        dialog = next(w for w in self.root.winfo_children() if isinstance(w, tk.Toplevel))
-        widgets = list(dialog.winfo_children())
-        all_widgets = []
-        while widgets:
-            widget = widgets.pop()
-            all_widgets.append(widget)
-            widgets.extend(widget.winfo_children())
+        dialog = self.gui.settings_editor.view.canvas
         editor = self.gui.settings_editor
         before = self.gui.solver_mode
         editor.mode.set("optimal")

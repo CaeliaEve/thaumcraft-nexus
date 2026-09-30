@@ -4,27 +4,14 @@ from __future__ import annotations
 import queue
 import threading
 import tkinter as tk
-from tkinter import ttk
-
-from .native_window import theme_window
-
-PAPER = "#d3ba8d"
-INK = "#352519"
-RED = "#641b13"
 
 
 class SettingsDialog:
     def __init__(self, app):
-        from .gui_app import ACTION_LABELS, ACTION_ORDER, PLACEMENT_SPEED_PRESETS
         self.app = app
-        self.window = tk.Toplevel(app.tk)
-        self.window.title("研究配置 · Thaumcraft Nexus")
-        self.window.configure(bg="#211611")
-        self.window.geometry("800x530")
-        self.window.minsize(760, 510)
-        self.window.transient(app.tk)
-        self.window.grab_set()
-        theme_window(self.window)
+        self.window = app.tk
+        app.logbook._hide_tooltip()
+        app.canvas.pack_forget()
         self.shortcuts = dict(app.shortcuts)
         self.mode = tk.StringVar(self.window, app.solver_mode)
         self.pid = tk.StringVar(self.window, app.target_pid)
@@ -38,130 +25,52 @@ class SettingsDialog:
         self.capture_action = None
         self.results = queue.Queue()
         self.refreshing = False
-        self.window.protocol("WM_DELETE_WINDOW", self.cancel)
-        self.window.bind("<Escape>", self.escape)
-        self.window.bind("<KeyPress>", self.capture_key)
-
-        footer = tk.Frame(self.window, bg="#211611", padx=18, pady=14)
-        footer.pack(side="bottom", fill="x")
-        ttk.Button(footer, text="恢复本页默认", command=self.reset_page).pack(side="left")
-        ttk.Button(footer, text="保存配置", style="Primary.TButton", command=self.save).pack(side="right")
-        ttk.Button(footer, text="取消", command=self.cancel).pack(side="right", padx=10)
-        tk.Label(self.window, textvariable=self.hint, bg="#211611", fg="#e6cda5",
-                 anchor="w", wraplength=730, padx=18, pady=8).pack(side="bottom", fill="x")
-        body = tk.Frame(self.window, bg="#211611")
-        body.pack(fill="both", expand=True, padx=14, pady=(14, 0))
-        nav = tk.Frame(body, bg="#211611", width=154)
-        nav.pack(side="left", fill="y", padx=(0, 12))
-        tk.Label(nav, text="研究配置", bg="#211611", fg="#d9bc86",
-                 font=("Microsoft YaHei", 17), pady=18).pack(fill="x")
-        self.content = tk.Frame(body, bg=PAPER, padx=24, pady=20)
-        self.content.pack(side="left", fill="both", expand=True)
-        self.pages = {}
-        self.nav = {}
-        for title in ("研究策略", "注入节律", "快捷符令", "世界连接"):
-            self.nav[title] = tk.Button(nav, text=title, command=lambda t=title: self.show_page(t),
-                                       bg="#211611", fg="#d9bc86", activebackground=RED,
-                                       activeforeground="#f3dfb8", relief="flat", bd=0,
-                                       font=("Microsoft YaHei", 11), padx=22, pady=12)
-            self.nav[title].pack(fill="x", pady=3)
-            page = tk.Frame(self.content, bg=PAPER)
-            self.pages[title] = page
-            self.label(page, title, 18).pack(anchor="w", pady=(0, 16))
-        from .client_bridge import DEFAULT_SOLVER_MODE, SOLVER_MODE_OPTIMAL
-        page = self.pages["研究策略"]
-        for value, title, description in (
-            (DEFAULT_SOLVER_MODE, "库存优先", "优先使用储备充足的要素，尽量减少合成与稀缺库存消耗。"),
-            (SOLVER_MODE_OPTIMAL, "精简连线", "在搜索预算内减少放置格数，再兼顾库存与合成；不保证全局最优。"),
-        ):
-            card = tk.Frame(page, bg="#c6aa7d", padx=14, pady=10)
-            card.pack(fill="x", pady=(0, 14))
-            tk.Radiobutton(card, text=title, variable=self.mode, value=value, bg="#c6aa7d",
-                           fg=RED, selectcolor=PAPER, activebackground="#c6aa7d",
-                           font=("Microsoft YaHei", 12)).pack(anchor="w")
-            tk.Label(card, text=description, wraplength=450, justify="left", bg="#c6aa7d",
-                     fg=INK, font=("Microsoft YaHei", 10)).pack(anchor="w", pady=(6, 0))
-        page = self.pages["注入节律"]
-        self.label(page, "较慢的服务器建议使用稳定预设；极速可能增加校验失败。", 10).pack(anchor="w")
-        choices = tk.Frame(page, bg=PAPER)
-        choices.pack(fill="x", pady=18)
-        for key, value in PLACEMENT_SPEED_PRESETS.items():
-            tk.Radiobutton(choices, text=value["label"], variable=self.preset, value=key,
-                           command=self.speed_changed, bg=PAPER, fg=INK,
-                           activebackground=PAPER, selectcolor=PAPER).pack(side="left")
-        self.speed_summary = tk.StringVar(self.window)
-        tk.Label(page, textvariable=self.speed_summary, bg=PAPER, fg=RED).pack(anchor="w", pady=10)
-        self.custom = tk.Frame(page, bg=PAPER)
-        for row, (label, variable) in enumerate((("要素间隔（毫秒）", self.delay), ("完成等待（毫秒）", self.verify))):
-            self.label(self.custom, label, 10).grid(row=row, column=0, sticky="w", pady=8)
-            ttk.Entry(self.custom, textvariable=variable, width=14).grid(row=row, column=1, padx=20)
-        self.speed_changed()
-        page = self.pages["快捷符令"]
-        self.label(page, "选择重新绑定后按下快捷键，Esc 取消本次绑定。", 10).pack(anchor="w", pady=(0, 12))
-        rows = tk.Frame(page, bg=PAPER)
-        rows.pack(fill="x")
-        rows.columnconfigure(0, weight=1, minsize=190)
-        self.shortcut_vars = {}
-        for row, action in enumerate(ACTION_ORDER):
-            self.label(rows, ACTION_LABELS[action], 10).grid(row=row, column=0, sticky="w", pady=12)
-            var = tk.StringVar(self.window, app._shortcut_display(self.shortcuts[action]))
-            self.shortcut_vars[action] = var
-            tk.Label(rows, textvariable=var, bg=PAPER, fg=RED, width=12).grid(row=row, column=1, padx=12)
-            ttk.Button(rows, text="重新绑定", command=lambda a=action: self.capture(a)).grid(row=row, column=2)
-        page = self.pages["世界连接"]
-        self.label(page, "默认自动检测游戏；手动选择仅对本次运行生效。", 10).pack(anchor="w")
-        ttk.Button(page, text="使用自动检测", command=lambda: self.pid.set("")).pack(anchor="w", pady=14)
+        self.manual_open = bool(self.pid.get())
         self.process = tk.StringVar(self.window)
-        self.process_combo = ttk.Combobox(page, textvariable=self.process, state="readonly", width=48)
-        self.process_combo.pack(fill="x", pady=8)
-        self.process_combo.bind("<<ComboboxSelected>>", self.select_process)
-        self.refresh_button = ttk.Button(page, text="刷新游戏进程", command=self.refresh_processes)
-        self.refresh_button.pack(anchor="w", pady=6)
-        self.manual = tk.Frame(page, bg=PAPER)
-        self.label(self.manual, "PID", 10).pack(side="left", padx=(0, 12))
-        ttk.Entry(self.manual, textvariable=self.pid, width=20).pack(side="left")
-        ttk.Button(page, text="手动指定 PID ▾", command=self.toggle_manual).pack(anchor="w", pady=8)
-        self.label(page, "当前 PID（空白表示自动检测）：", 10).pack(anchor="w", pady=(10, 0))
-        tk.Label(page, textvariable=self.pid, bg=PAPER, fg=RED).pack(anchor="w")
-        self.show_page("研究策略")
-        self.window.focus_set()
-
-    @staticmethod
-    def label(parent, text, size):
-        return tk.Label(parent, text=text, bg=PAPER, fg=INK, wraplength=470,
-                        justify="left", font=("Microsoft YaHei", size))
+        self.shortcut_vars = {a: tk.StringVar(self.window, app._shortcut_display(v))
+                              for a, v in self.shortcuts.items()}
+        self.page = "研究策略"
+        from .settings_book_view import SettingsBookView
+        self.view = SettingsBookView(self)
+        self.process_combo = self.view.process_combo
+        self.traces = []
+        for variable in (self.mode, self.pid, self.preset, self.hint):
+            token = variable.trace_add("write", lambda *_: self.view.draw())
+            self.traces.append((variable, token))
+        self.show_page(self.page)
+        self.view.canvas.focus_set()
 
     def show_page(self, title):
         self.capture_action = None
         self.page = title
-        for name, page in self.pages.items():
-            page.pack_forget()
-            self.nav[name].configure(bg=RED if name == title else "#211611")
-        self.pages[title].pack(fill="both", expand=True)
+        hints = {
+            "研究策略": "推演受搜索预算限制，不保证全局最优。",
+            "注入节律": "较慢的服务器建议使用稳定；极速可能增加校验失败。",
+            "快捷符令": "Esc 取消绑定；重复键位会显示提示。",
+            "世界连接": "手动选择仅本次运行有效，重启后自动检测。",
+        }
+        self.hint.set(hints[title])
+        self.view.focus = title
+        self.view.draw()
 
     def speed_changed(self):
         from .gui_app import PLACEMENT_SPEED_PRESETS
-        custom = self.preset.get() == "custom"
-        if custom:
-            self.custom.pack(fill="x")
-        else:
+        if self.preset.get() != "custom":
             config = PLACEMENT_SPEED_PRESETS[self.preset.get()]
             self.delay.set(str(config["delayMs"]))
             self.verify.set(str(config["verifyDelayMs"]))
-            self.custom.pack_forget()
-        self.speed_summary.set("可填写 0 到 5000 毫秒。" if custom else
-                               f"要素间隔 {self.delay.get()} ms   ·   完成等待 {self.verify.get()} ms")
+        self.view.draw()
 
     def toggle_manual(self):
-        if self.manual.winfo_manager():
-            self.manual.pack_forget()
-        else:
-            self.manual.pack(anchor="w", pady=6)
+        self.manual_open = not self.manual_open
+        self.view.draw()
+        if self.manual_open:
+            self.view.fields["pid"].focus_set()
 
     def capture(self, action):
         self.capture_action = action
         self.hint.set("请按下新的快捷键；Esc 取消绑定。")
-        self.window.focus_set()
+        self.view.canvas.focus_set()
 
     def capture_key(self, event):
         if self.capture_action is None:
@@ -215,7 +124,7 @@ class SettingsDialog:
         if self.refreshing:
             return
         self.refreshing = True
-        self.refresh_button.configure(state="disabled")
+        self.view.draw()
         self.hint.set("正在查找游戏进程……")
         def work():
             from .client_bridge import list_java_processes
@@ -236,7 +145,7 @@ class SettingsDialog:
             self.pending = self.window.after(80, self.poll_processes)
             return
         self.refreshing = False
-        self.refresh_button.configure(state="normal")
+        self.view.draw()
         self.process_combo.configure(values=values)
         self.process.set("")
         self.hint.set("进程刷新失败：" + error if error else
@@ -280,4 +189,9 @@ class SettingsDialog:
         if self.pending is not None:
             self.window.after_cancel(self.pending)
             self.pending = None
-        self.window.destroy()
+        for variable, token in self.traces:
+            variable.trace_remove("write", token)
+        self.view.canvas.destroy()
+        self.app.canvas.pack(fill="both", expand=True)
+        self.app.logbook.draw()
+        self.app.canvas.focus_set()

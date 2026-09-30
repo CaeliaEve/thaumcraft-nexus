@@ -522,6 +522,9 @@ class ThaumNexusGui:
             self.shortcut_bindings.append(sequence)
 
     def _invoke_action(self, action: str) -> str:
+        editor = getattr(self, "settings_editor", None)
+        if editor is not None and not editor.closed:
+            return "break"
         button = self.buttons.get(action)
         if button is not None:
             button.invoke()
@@ -563,7 +566,7 @@ class ThaumNexusGui:
         from .settings_dialog import SettingsDialog
         editor = getattr(self, "settings_editor", None)
         if editor is not None and not editor.closed:
-            editor.window.lift()
+            editor.view.canvas.focus_set()
             return
         self.settings_editor = SettingsDialog(self)
 
