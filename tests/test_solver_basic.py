@@ -97,7 +97,7 @@ class SolverBasicTests(unittest.TestCase):
         self.assertEqual(resource_solution.placements, {HexCoord(1, 0): "auram"})
         validate_solution(board, kb, resource_solution)
 
-    def test_minimal_placement_mode_ignores_inventory_bias(self):
+    def test_minimal_placement_mode_uses_inventory_only_for_equal_length_paths(self):
         kb = KnowledgeBase.load()
         board = BoardState.from_dict(
             {
@@ -119,8 +119,92 @@ class SolverBasicTests(unittest.TestCase):
             ),
         )
 
-        self.assertEqual(solution.placements, {HexCoord(1, 0): "vacuos"})
+        self.assertEqual(solution.placements, {HexCoord(1, 0): "auram"})
         validate_solution(board, kb, solution)
+
+    def test_minimal_placement_mode_balances_primal_aspects_by_remaining_stock(self):
+        kb = KnowledgeBase.load()
+        board = BoardState.from_dict(
+            {
+                "name": "balanced-primal-choice",
+                "cells": [
+                    {"q": 0, "r": 0, "kind": "root", "aspect": "lux"},
+                    {"q": 1, "r": 0, "kind": "empty"},
+                    {"q": 2, "r": 0, "kind": "root", "aspect": "lux"},
+                ],
+            }
+        )
+
+        ignis_solution = solve(
+            board,
+            kb,
+            SearchConfig(
+                aspect_inventory={"aer": 2, "ignis": 20},
+                minimize_placements=True,
+            ),
+        )
+        aer_solution = solve(
+            board,
+            kb,
+            SearchConfig(
+                aspect_inventory={"aer": 20, "ignis": 2},
+                minimize_placements=True,
+            ),
+        )
+        equal_solution = solve(
+            board,
+            kb,
+            SearchConfig(
+                aspect_inventory={"aer": 10, "ignis": 10},
+                minimize_placements=True,
+            ),
+        )
+
+        self.assertEqual(ignis_solution.placements, {HexCoord(1, 0): "ignis"})
+        self.assertEqual(aer_solution.placements, {HexCoord(1, 0): "aer"})
+        self.assertEqual(equal_solution.placements, {HexCoord(1, 0): "ignis"})
+        validate_solution(board, kb, ignis_solution)
+        validate_solution(board, kb, aer_solution)
+        validate_solution(board, kb, equal_solution)
+
+    def test_minimal_placement_mode_can_select_every_abundant_primal_aspect(self):
+        kb = KnowledgeBase.load()
+        cases = {
+            "aer": ("lux", "ignis"),
+            "aqua": ("victus", "terra"),
+            "ignis": ("lux", "aer"),
+            "ordo": ("potentia", "ignis"),
+            "perditio": ("vacuos", "aer"),
+            "terra": ("victus", "aqua"),
+        }
+
+        for preferred, (root_aspect, alternate) in cases.items():
+            with self.subTest(preferred=preferred):
+                board = BoardState.from_dict(
+                    {
+                        "name": f"abundant-{preferred}",
+                        "cells": [
+                            {"q": 0, "r": 0, "kind": "root", "aspect": root_aspect},
+                            {"q": 1, "r": 0, "kind": "empty"},
+                            {"q": 2, "r": 0, "kind": "root", "aspect": root_aspect},
+                        ],
+                    }
+                )
+                inventory = {aspect: 5 for aspect in kb.primal}
+                inventory[preferred] = 20
+                inventory[alternate] = 2
+
+                solution = solve(
+                    board,
+                    kb,
+                    SearchConfig(
+                        aspect_inventory=inventory,
+                        minimize_placements=True,
+                    ),
+                )
+
+                self.assertEqual(solution.placements, {HexCoord(1, 0): preferred})
+                validate_solution(board, kb, solution)
 
     def test_minimal_placement_mode_compares_root_connection_orders(self):
         kb = KnowledgeBase.load()

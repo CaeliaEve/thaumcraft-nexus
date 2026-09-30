@@ -1,13 +1,14 @@
 ﻿param(
     [switch]$SkipPyInstallerInstall,
     [switch]$SkipJavaAgentBuild,
-    [string]$BundledJdkPath
+    [string]$BundledJdkPath,
+    [string]$OutputDir
 )
 
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
-$DistRoot = Join-Path $ProjectRoot "dist"
+$DistRoot = if ($OutputDir) { [System.IO.Path]::GetFullPath($OutputDir) } else { Join-Path $ProjectRoot "dist" }
 $AppDist = Join-Path $DistRoot "ThaumcraftNexus"
 $PyInstallerBuild = Join-Path $ProjectRoot "build\pyinstaller"
 $SpecPath = Join-Path $PyInstallerBuild "spec"

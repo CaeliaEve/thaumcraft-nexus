@@ -5,7 +5,9 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 build/
-dist/
+# Keep the published Windows package alongside source on main.
+dist/*
+!dist/ThaumcraftNexus/
 
 # Local runtime output
 runtime/

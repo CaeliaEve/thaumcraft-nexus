@@ -1,0 +1,24 @@
+{
+  "schema": "thaumcraft-nexus/data-manifest/v1",
+  "source": {
+    "nesqlRoot": "local NESQL export, supplied by --nesql or THAUM_NEXUS_NESQL",
+    "items": "items/thaumcraftneiplugin/items.json.gz",
+    "payloads": "raw-export/special/thaumcraft/payloads.jsonl.gz",
+    "projectImageDir": "image",
+    "generatedAtUtc": "2026-07-04T10:58:20.979914+00:00",
+    "note": "NESQL source files are read-only inputs; generated files live under this project data/ directory."
+  },
+  "files": {
+    "aspects": "data/aspects.json",
+    "combinations": "data/combinations.json",
+    "adjacency": "data/adjacency.json"
+  },
+  "counts": {
+    "aspects": 69,
+    "canonicalIcons": 69,
+    "primal": 6,
+    "combinations": 63,
+    "adjacencyEdges": 126,
+    "ignoredRows": 1
+  }
+}

@@ -39,7 +39,7 @@ Thaumcraft Nexus 是面向 **Thaumcraft 4 / GT New Horizons** 的外部桌面工
 | 结构化读取 | 直接从客户端读取研究笔记数据，不依赖截图识别。 |
 | 自动求解 | 基于 Thaumcraft 要素邻接规则计算合法连线路径。 |
 | 资源感知 | 读取玩家当前可用要素数量，并在求解时优先使用更充足的要素。 |
-| 最优路径模式 | 在搜索预算内比较多种连接顺序与候选路径，以总放置数量为首要目标；库存仅作为候选搜索提示。 |
+| 最优路径模式 | 在搜索预算内比较多种连接顺序与候选路径，以总放置数量为首要目标；格数相同时按库存余量、基础要素均衡和合成开销择优。 |
 | 要素合成 | 在要素不足时，递归生成并执行多阶合成链。 |
 | 自动放置 | 将求解结果发送至当前研究台，完成要素放置。 |
 | 批量处理 | 连续处理研究台和背包中的未完成研究笔记。 |
@@ -47,6 +47,8 @@ Thaumcraft Nexus 是面向 **Thaumcraft 4 / GT New Horizons** 的外部桌面工
 | 快捷键配置 | 支持在 GUI 内配置常用操作快捷键。 |
 
 ## 运行方式
+
+源码和 Windows 便携版统一在 `main` 分支维护。直接使用可打开仓库中的 [`dist/ThaumcraftNexus/`](dist/ThaumcraftNexus/)；开发和调试可从同一份仓库运行源码。
 
 ### Windows 便携版
 
@@ -57,8 +59,9 @@ ThaumcraftNexus/
   ThaumcraftNexus.exe
   README_CN.txt
   _internal/
-  image/
-  data/
+    image/
+    data/
+    java-agent/
   runtime/        # 运行时生成
 ```
 
@@ -109,6 +112,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\java-agent\build_agent.ps1
 | 设置 | 选择 JVM 进程、填写 PID、配置快捷键、摆放速度和求解策略。 |
 
 自动放置和批量处理会消耗游戏内要素资源。执行前应确认当前研究台状态和求解结果符合预期。
+
+主页采用魔导手册双页布局：左页提供操作目录与实时状态，右页显示透明棋盘预览。窗口缩放时书页、文字和点击区域等比例调整；支持 Tab / Shift+Tab、方向键导航及 Enter / Space 激活。左下角“查看详情”可查看持续更新的任务记录，长笔记名可悬停查看全文。
 
 ## Java / JVM 要求
 
@@ -192,6 +197,12 @@ dist/ThaumcraftNexus/
 
 发布时应分发完整的 `ThaumcraftNexus` 文件夹。
 
+如需保留现有便携包，可通过 `-OutputDir` 指定另一个输出目录：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_portable.ps1 -OutputDir .\build\logbook-portable
+```
+
 ## 数据文件
 
 仓库包含运行所需的要素数据与图标资源。
@@ -224,7 +235,15 @@ python -m py_compile thaum_nexus\gui_app.py thaum_nexus\client_bridge.py thaum_n
 powershell -NoProfile -ExecutionPolicy Bypass -File .\java-agent\build_agent.ps1
 ```
 
-源码版本由 `main` 分支维护；Windows 便携版可由独立发布分支维护。
+统一使用 `main` 分支维护源码、测试、资源与 `dist/ThaumcraftNexus/` 便携包，不再单独维护 `release/windows` 分支。发布更新时，先验证源码并重新构建便携包，再将两者一起提交；运行时设置、日志及本地 JDK 不纳入版本控制。
+
+可离线生成主页各状态的 PNG 预览，无需连接游戏：
+
+```powershell
+python tools\render_logbook_preview.py
+```
+
+预览输出到 `build/logbook-previews/`。底图使用 `image/thaumonomicon_bg_clean.png`，原始参考 JPG 保留；如需重新修补底图，开发环境额外安装 `opencv-python-headless` 后运行 `python tools\prepare_logbook_background.py`。OpenCV 不属于程序运行依赖。
 
 ## 项目结构
 
@@ -236,6 +255,7 @@ tools/            命令行工具和数据提取脚本
 data/             已生成的要素知识库
 image/            要素图标和 GUI 资源
 tests/            回归测试
+dist/ThaumcraftNexus/  Windows 便携版（与源码同步维护）
 start_gui.cmd     GUI 启动脚本
 ```
 

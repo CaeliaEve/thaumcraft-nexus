@@ -24,16 +24,17 @@ class BoardImageRenderer:
     icon_size: int = 24
     margin: int = 58
 
-    def render(self, board: BoardState, solution: Solution | None = None):
+    def render(self, board: BoardState, solution: Solution | None = None, *, paper: bool = False):
         if Image is None:
             raise RuntimeError("Pillow is required for BoardImageRenderer")
         from PIL import ImageDraw, ImageFont
 
+        background = (0, 0, 0, 0) if paper else (5, 5, 5, 255)
         coords = set(board.cells)
         if solution is not None:
             coords.update(solution.placements)
         if not coords:
-            return Image.new("RGBA", (640, 360), (5, 5, 5, 255))
+            return Image.new("RGBA", (640, 360), background)
 
         raw_positions = {coord: self._axial_to_raw(coord) for coord in coords}
         min_x = min(x for x, _y in raw_positions.values())
@@ -41,25 +42,22 @@ class BoardImageRenderer:
         min_y = min(y for _x, y in raw_positions.values())
         max_y = max(y for _x, y in raw_positions.values())
 
-        width = int(round(max_x - min_x + self.margin * 2 + self.hex_size * 2))
-        height = int(round(max_y - min_y + self.margin * 2 + self.hex_size * 2))
-        image = Image.new("RGBA", (max(520, width), max(340, height)), (5, 5, 5, 255))
+        margin = 18 if paper else self.margin
+        width = int(round(max_x - min_x + margin * 2 + self.hex_size * 2))
+        height = int(round(max_y - min_y + margin * 2 + self.hex_size * 2))
+        if not paper:
+            width, height = max(520, width), max(340, height)
+        image = Image.new("RGBA", (width, height), background)
         draw = ImageDraw.Draw(image, "RGBA")
         font = ImageFont.load_default()
 
         positions = {
             coord: (
-                x - min_x + self.margin + self.hex_size,
-                y - min_y + self.margin + self.hex_size,
+                x - min_x + (width - (max_x - min_x)) / 2,
+                y - min_y + (height - (max_y - min_y)) / 2,
             )
             for coord, (x, y) in raw_positions.items()
         }
-
-        if solution is not None:
-            for path in solution.paths:
-                points = [positions[coord] for coord in path.coords if coord in positions]
-                if len(points) >= 2:
-                    draw.line(points, fill=(245, 245, 245, 140), width=4)
 
         for coord in sorted(board.cells):
             cell = board.cells[coord]
@@ -78,11 +76,30 @@ class BoardImageRenderer:
             elif is_solution_cell:
                 outline = (220, 220, 220, 255)
                 fill = (34, 34, 34, 245)
+            if paper:
+                fill = (190, 147, 82, 18)
+                outline = (55, 36, 20, 130)
+                outline_width = 1
+                if cell.kind is CellKind.ROOT:
+                    outline = (101, 28, 18, 245)
+                    fill = (201, 158, 93, 65)
+                    outline_width = 2
+                elif cell.kind is CellKind.PLACED or is_solution_cell:
+                    outline = (73, 40, 19, 230)
+                    fill = (197, 150, 85, 38)
+                    outline_width = 2
             points = self._hex_points(center)
             draw.polygon(points, fill=fill, outline=outline)
             draw.line(points + [points[0]], fill=outline, width=outline_width)
 
-        # Draw icons after cells so they stay crisp.
+        # RGBA polygon fills replace pixels, so paths must follow the cells.
+        if solution is not None:
+            for path in solution.paths:
+                points = [positions[coord] for coord in path.coords if coord in positions]
+                if len(points) >= 2:
+                    draw.line(points, fill=(104, 33, 20, 190) if paper else (245, 245, 245, 140), width=3 if paper else 4)
+
+        # Draw icons after cells and paths so they stay crisp.
         for coord in sorted(board.cells):
             cell = board.cells[coord]
             aspect = solution.placements.get(coord) if solution is not None and coord in solution.placements else cell.aspect
@@ -99,15 +116,16 @@ class BoardImageRenderer:
                 draw.rounded_rectangle(
                     (bbox[0] - 4, bbox[1] - 3, bbox[2] + 4, bbox[3] + 3),
                     radius=4,
-                    fill=(0, 0, 0, 185),
-                    outline=(140, 140, 140, 220),
+                    fill=(222, 193, 148, 235) if paper else (0, 0, 0, 185),
+                    outline=(89, 53, 27, 220) if paper else (140, 140, 140, 220),
                 )
-                draw.text((x + 12, y - 26), label, fill=(245, 245, 245, 255), font=font)
+                draw.text((x + 12, y - 26), label, fill=(52, 28, 14, 255) if paper else (245, 245, 245, 255), font=font)
 
         title = board.name or "Thaumcraft research note"
         if solution is not None:
             title += f"  ·  placements: {len(solution.placements)}"
-        draw.text((18, 16), title, fill=(124, 124, 124, 255), font=font)
+        if not paper:
+            draw.text((18, 16), title, fill=(124, 124, 124, 255), font=font)
         return image
 
     def save(self, board: BoardState, solution: Solution | None, output: Path) -> None:
@@ -123,8 +141,8 @@ class BoardImageRenderer:
         x, y = center
         return [
             (
-                x + self.hex_size * cos(pi / 6.0 + i * pi / 3.0),
-                y + self.hex_size * sin(pi / 6.0 + i * pi / 3.0),
+                x + self.hex_size * cos(i * pi / 3.0),
+                y + self.hex_size * sin(i * pi / 3.0),
             )
             for i in range(6)
         ]
@@ -134,7 +152,8 @@ class BoardImageRenderer:
         icon_path = Path(aspect.icon)
         if not icon_path.is_absolute():
             icon_path = resource_path(icon_path, self.project_root)
-        icon = Image.open(icon_path).convert("RGBA").resize((self.icon_size, self.icon_size), Image.Resampling.LANCZOS)
+        with Image.open(icon_path) as source:
+            icon = source.convert("RGBA").resize((self.icon_size, self.icon_size), Image.Resampling.LANCZOS)
         x = int(round(center[0] - icon.width / 2))
         y = int(round(center[1] - icon.height / 2))
         image.alpha_composite(icon, (x, y))
